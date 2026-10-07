@@ -99,5 +99,8 @@ reel() {
 
 # Kontaktbogen zur Kontrolle (alle 2 s ein Bild).  kontrolle VIDEO BILD.jpg
 kontrolle() {
-  ffmpeg -v error -y -i "$1" -vf "fps=0.5,scale=150:-2,tile=15x3" -frames:v 1 "$2"
+  local n rows
+  n=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" | awk '{print int($1/2)+1}')
+  rows=$(( (n + 14) / 15 ))
+  ffmpeg -v error -y -i "$1" -vf "fps=0.5,scale=150:-2,tile=15x$rows" -frames:v 1 "$2"
 }
