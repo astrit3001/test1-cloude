@@ -144,6 +144,7 @@
       <div class="lc-cfg__step" data-step="sanitaer">
         <h3>Waschtisch, Badewanne, WC & Badmöbel von Ilbagno (APE Grupo)</h3>
         <p class="lc-cfg__sub">Wählen Sie konkrete Produkte – oder überspringen Sie diesen Schritt.</p>
+        <p class="lc-cfg__sync" data-sync hidden></p>
         <div class="lc-cfg__chips" data-san-filter></div>
         <div class="lc-cfg__grid-products" data-san-grid></div>
       </div>
@@ -2271,9 +2272,48 @@
           const cur = this.sel.san[id] || { p, vid: p.vs[0].id, q: 0 };
           cur.q += parseInt(b.dataset.q, 10);
           if (cur.q <= 0) delete this.sel.san[id]; else this.sel.san[id] = cur;
+          if (cur.q > 0) this.syncOptions();
           this.renderSanitary(); this.update();
         }));
-        grid.querySelectorAll('[data-svar]').forEach((el) => el.addEventListener('change', () => { this.sel.san[el.dataset.svar].vid = parseInt(el.value, 10); this.update(); }));
+        grid.querySelectorAll('[data-svar]').forEach((el) => el.addEventListener('change', () => { this.sel.san[el.dataset.svar].vid = parseInt(el.value, 10); this.syncOptions(); this.update(); }));
+      }
+      // Ausstattung an die gewählten Sanitärprodukte angleichen (Montage/Einbau passt dann zum Produkt)
+      syncOptions() {
+        const san = Object.values(this.sel.san), notes = [];
+        const txt = (cat) => san.filter((x) => this.sanCat(x.p) === cat).map((x) => x.p.t + ' ' + ((x.p.vs.find((v) => v.id === x.vid) || {}).t || ''))[0] || '';
+        const group = (prefix) => this.opts.find((g) => g.step === 'A' && g.name.indexOf(prefix) === 0);
+        const pick = (prefix, re, drop) => {
+          const g = group(prefix), it = g && g.items.find((i) => re.test(i.label));
+          if (!it) return;
+          const cur = g.multi ? (this.choice[g.name] || []).filter((id) => !(drop && drop.test((g.items.find((i) => i.id === id) || {}).label || ''))) : [];
+          if (cur.indexOf(it.id) < 0) cur.push(it.id);
+          const before = (this.choice[g.name] || []).join();
+          this.choice[g.name] = cur;
+          if (before !== cur.join()) notes.push(g.name.replace(/ \(.*\)$/, '') + ' → ' + it.label);
+        };
+        const tray = txt('Duschwannen');
+        if (tray) {
+          pick('Dusche', /Duschwanne/, /Bodengleich/);
+          const m = tray.match(/(\d{2,3})\s*[x×]\s*(\d{2,3})/), g = group('Duschgröße');
+          if (m && g) {
+            const w = Math.max(+m[1], +m[2]);
+            const best = g.items.map((i) => { const n = i.label.match(/(\d+)\s*×/); return [i, n ? Math.abs(+n[1] - w) + (/ab/.test(i.label) && w >= +n[1] ? -1 : 0) : 999]; }).sort((a, b) => a[1] - b[1])[0];
+            if (best && best[1] < 999 && (this.choice[g.name] || [])[0] !== best[0].id) { this.choice[g.name] = [best[0].id]; notes.push('Duschgröße → ' + best[0].label); }
+          }
+        }
+        const tub = txt('Badewannen');
+        if (tub) pick('Badewanne', /freistehend|freestanding|exent/i.test(tub) ? /Freistehend/ : /whirl/i.test(tub) ? /Whirlpool/ : /Einbau/);
+        const vt = txt('Waschtische') || txt('Badmöbel');
+        if (vt) { const cm = +(vt.match(/(\d{2,3})\s*cm/i) || [0, 0])[1]; pick('Waschplatz', /doppel|doble|2 becken/i.test(vt) || cm >= 120 ? /Doppel/ : /Einzel/); }
+        const wc = txt('WC');
+        if (wc) pick('WC', /stand/i.test(wc) ? /Stand-WC/ : /dusch/i.test(wc) ? /Dusch-WC/ : /Wand-WC/);
+        if (txt('Heizkörper')) pick('Heizung & Licht', /Handtuch/);
+        const box = this.$('[data-sync]');
+        // alle Anpassungen sammeln, je Gruppe nur die letzte
+        this.syncNotes = this.syncNotes || {};
+        notes.forEach((n) => { this.syncNotes[n.split(' → ')[0]] = n; });
+        const all = Object.values(this.syncNotes);
+        if (all.length) { box.hidden = false; box.textContent = 'Ausstattung passend zum Produkt angepasst: ' + all.join(' · '); }
       }
       summary() {
         const a = this.areas();
@@ -2438,6 +2478,7 @@
   .lc-cfg__slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .lc-cfg__slot { position: relative; display: flex; gap: 12px; align-items: center; padding: 10px 30px 10px 12px; border: 1px dashed #c9bfae; background: #f7f4ef; cursor: pointer; min-height: 76px; }
   .lc-cfg__slot.is-active { border: 2px solid #111; }
+  .lc-cfg__sync { background: #f3efe6; border-left: 3px solid #b8955a; padding: 8px 12px; font-size: 13.5px; color: #4a4033; margin: -4px 0 14px; }
   .lc-cfg__accent { display: grid; gap: 10px; margin: -6px 0 16px; }
   .lc-cfg__accent:empty { display: none; }
   .lc-cfg__acc { border: 1px solid #e4dccf; background: #fbf9f6; padding: 10px 12px; margin: 0; }
