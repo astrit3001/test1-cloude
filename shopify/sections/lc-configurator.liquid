@@ -223,7 +223,7 @@
     const range = (a, b) => (a === b ? EUR.format(a) : EUR.format(a) + ' – ' + EUR.format(b));
     const r100 = (v) => Math.round(v / 100) * 100;
     const SAN_CATS = ['Waschtische', 'Badewannen', 'Duschwannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Heizkörper', 'Zubehör'];
-    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör', Waschtische: 'Waschtische', Waschtisch: 'Waschtische', Duschwannen: 'Duschwannen', Duschwanne: 'Duschwannen', Heizpaneele: 'Heizkörper', 'Heizkörper': 'Heizkörper', 'Badzubehör': 'Zubehör' };
+    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör', Waschtische: 'Waschtische', Waschtisch: 'Waschtische', Waschtischkonsolen: 'Waschtische', Waschtischkonsole: 'Waschtische', Duschwannen: 'Duschwannen', Duschwanne: 'Duschwannen', Heizpaneele: 'Heizkörper', 'Heizkörper': 'Heizkörper', 'Badzubehör': 'Zubehör' };
     const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
     const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche', m2_rest: '/m² Wand ohne Fliesen', m2_decke: '/m² Decke' };
     const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
@@ -868,10 +868,26 @@
           const vw = it.w || (it.double ? 1.4 : 0.8);
           const basins = it.double ? [-vw / 4, vw / 4] : [0];
           const front = m({ color: { wood: 0x8a6a48, white: 0xf2f1ee, black: 0x2a2826, grey: 0x8d8b88 }[it.color || 'wood'], roughness: it.color === 'white' ? 0.35 : 0.6 });
-          if (it.stand) { box(vw, 0.7, 0.46, front, 0, 0.43, 0.23); box(vw - 0.04, 0.08, 0.42, m({ color: 0x3a3632, roughness: 0.8 }), 0, 0.04, 0.21); }
-          else box(vw, 0.45, 0.46, front, 0, 0.55, 0.23);
-          [0.36, 0.58].forEach((y) => { if (it.stand || y > 0.4) box(vw - 0.02, 0.004, 0.005, m({ color: 0x555049 }), 0, y + (it.stand ? 0 : 0.02), 0.462); });
-          box(vw + 0.02, 0.05, 0.48, ceramic(), 0, 0.8, 0.24);
+          const form = it.form || 'cabinet';
+          if (form === 'cabinet') {
+            if (it.stand) { box(vw, 0.7, 0.46, front, 0, 0.43, 0.23); box(vw - 0.04, 0.08, 0.42, m({ color: 0x3a3632, roughness: 0.8 }), 0, 0.04, 0.21); }
+            else box(vw, 0.45, 0.46, front, 0, 0.55, 0.23);
+            [0.36, 0.58].forEach((y) => { if (it.stand || y > 0.4) box(vw - 0.02, 0.004, 0.005, m({ color: 0x555049 }), 0, y + (it.stand ? 0 : 0.02), 0.462); });
+            box(vw + 0.02, 0.05, 0.48, ceramic(), 0, 0.8, 0.24);
+          } else if (form === 'pedestal') {
+            // Standwaschbecken: Säule bis zum Boden, Becken oben
+            basins.forEach((x) => { const c = new T.Mesh(new T.CylinderGeometry(0.17, 0.2, 0.78, 32), ceramic()); c.position.set(x, 0.39, 0.24); o.add(c); });
+            box(vw, 0.08, 0.46, ceramic(), 0, 0.82, 0.24);
+          } else if (form === 'console' || form === 'vessel') {
+            // Konsole/Waschtischplatte an der Wand, ggf. Aufsatzbecken
+            box(vw, 0.04, 0.48, form === 'console' ? front : ceramic(), 0, 0.84, 0.24);
+            if (form === 'vessel') basins.forEach((x) => { const c = new T.Mesh(new T.CylinderGeometry(0.2, 0.17, 0.14, 40), ceramic()); c.position.set(x, 0.93, 0.26); o.add(c); });
+            else box(vw - 0.1, 0.12, 0.36, ceramic(), 0, 0.76, 0.24);
+          } else {
+            // Wandwaschtisch ohne Unterschrank
+            box(vw, 0.16, 0.46, ceramic(), 0, 0.77, 0.23);
+            basins.forEach((x) => box(0.06, 0.25, 0.06, ceramic(), x, 0.56, 0.12));
+          }
           basins.forEach((x) => box(0.03, 0.2, 0.03, chrome(), x, 0.92, 0.06));
           const mirror = new T.Mesh(new T.PlaneGeometry(vw, 0.75), m({ color: 0xc9d3d8, metalness: 0.4, roughness: 0.05 }));
           mirror.position.set(0, 1.5, 0.01);
@@ -2155,7 +2171,11 @@
         const vw = cmIn(vP);
         if (wp || vq || !decided) out.push({
           key: 'vanity', w: vw >= 0.4 && vw <= 2.4 ? vw : 0,
-          double: vP ? /doppel|2 becken|zwei becken/i.test(vP) || vw >= 1.2 : /Doppel/.test(wp) || sanQ('Waschtische') >= 2,
+          double: vP ? /doppel|doble|double|2 becken|zwei becken/i.test(vP) : /Doppel/.test(wp) || sanQ('Waschtische') >= 2,
+          // Bauform für die 3D-Darstellung
+          form: !vP || /möbel|set|unterschrank|schublade|versa|pack/i.test(vP) ? 'cabinet'
+            : /konsole|mensola|platte|\bctt\b|\btop\b/i.test(vP) ? (/aufsatz|top round|tondo/i.test(vP) ? 'vessel' : 'console') : /aufsatz/i.test(vP) ? 'vessel'
+            : /stand|de pie|freestanding|freistehend/i.test(vP) ? 'pedestal' : 'wall',
           stand: /stehend|standwasch|de pie|freestanding|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
           color: /eiche|holz|nuss|teak|natur/i.test(vP) ? 'wood' : /schwarz|black/i.test(vP) ? 'black' : /grau|anthrazit|grey/i.test(vP) ? 'grey' : /weiß|weiss|white/i.test(vP) ? 'white' : vP ? 'white' : 'wood',
           led: licht.some((t) => /LED/.test(t)),
@@ -2304,7 +2324,7 @@
         const tub = txt('Badewannen');
         if (tub) pick('Badewanne', /freistehend|freestanding|exent/i.test(tub) ? /Freistehend/ : /whirl/i.test(tub) ? /Whirlpool/ : /Einbau/);
         const vt = txt('Waschtische') || txt('Badmöbel');
-        if (vt) { const cm = +(vt.match(/(\d{2,3})\s*cm/i) || [0, 0])[1]; pick('Waschplatz', /doppel|doble|2 becken/i.test(vt) || cm >= 120 ? /Doppel/ : /Einzel/); }
+        if (vt) pick('Waschplatz', /doppel|doble|double|2 becken|zwei becken/i.test(vt) ? /Doppel/ : /Einzel/);
         const wc = txt('WC');
         if (wc) pick('WC', /stand/i.test(wc) ? /Stand-WC/ : /dusch/i.test(wc) ? /Dusch-WC/ : /Wand-WC/);
         if (txt('Heizkörper')) pick('Heizung & Licht', /Handtuch/);
