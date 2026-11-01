@@ -61,6 +61,7 @@
             <button type="button" class="lc-cfg__3d-mode" data-3d-auto>Automatisch planen</button>
             <button type="button" data-3d-extra="door" aria-pressed="true">Tür</button>
             <button type="button" data-3d-extra="window" aria-pressed="false">Fenster</button>
+            <button type="button" data-3d-walls aria-pressed="false">Wandfliesen anpassen</button>
             <button type="button" data-3d-snap aria-pressed="true">Fugenraster</button>
             <button type="button" data-3d-reset>Zurücksetzen</button>
             <button type="button" class="lc-cfg__3d-mode" data-3d-print>Pläne drucken</button>
@@ -106,7 +107,7 @@
             <label class="lc-cfg__field"><span>Breite (m)</span><input type="number" min="0.5" step="0.05" inputmode="decimal" placeholder="z. B. 2,5" data-m="b"></label>
             <label class="lc-cfg__field"><span>Raumhöhe (m)</span><input type="number" min="1.8" step="0.05" inputmode="decimal" value="2.50" data-m="h"></label>
             <label class="lc-cfg__field"><span>Wandfliesen</span>
-              <select data-m="wall"><option value="full">raumhoch</option><option value="half">halbhoch (1,20 m)</option><option value="none">keine Wandfliesen</option></select>
+              <select data-m="wall"><option value="full">raumhoch</option><option value="half">halbhoch (1,20 m)</option><option value="sockel">nur Sockel (8 cm)</option><option value="none">keine Wandfliesen</option></select>
             </label>
           </div>
           <div class="lc-cfg__row lc-cfg__row--4 lc-cfg__row--slope">
@@ -222,7 +223,7 @@
     const SAN_CATS = ['Waschtische', 'Badewannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Zubehör'];
     const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör' };
     const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
-    const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche' };
+    const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche', m2_rest: '/m² Wand ohne Fliesen', m2_decke: '/m² Decke' };
     const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
     let threeLoad = null;
 
@@ -238,6 +239,9 @@
     const cm = (v) => Math.round(v * 1000) / 10;
     const cmT = (v) => String(cm(v)).replace('.', ',');
     const GROUT = 0.2; // Fugenbreite in cm
+    const SOCKEL = 0.08; // Sockelhöhe in m
+    const MODES = ['full', 'half', 'sockel', 'none'];
+    const MODE_NAMES = { full: 'raumhoch', half: 'halbhoch (1,20 m)', sockel: 'nur Sockel (8 cm)', none: 'ohne Fliesen' };
     // Bewegungsflächen & Abstände für die automatische Planung (Richtwerte; VDI 6000: 80 × 75 cm vor dem WC)
     const PLAN = { shower: { side: 0, front: 0.75 }, tub: { side: 0, front: 0.75 }, wc: { side: 0.2, front: 0.75 }, bidet: { side: 0.2, front: 0.75 }, urinal: { side: 0.2, front: 0.75 }, vanity: { side: 0.05, front: 0.75 }, radiator: { side: 0.05, front: 0 }, fan: { side: 0, front: 0 } };
     // Symmetrische Verlegung: Abstand der ersten Fuge vom Wandanfang, so dass beide Randstücke gleich und möglichst groß sind
@@ -294,6 +298,15 @@
         });
         this.extra = { door: true, window: false };
         this.snapOn = true;
+        this.wallMode = {};
+        this.editWalls = false;
+        const wallsBtn = box.querySelector('[data-3d-walls]');
+        wallsBtn.addEventListener('click', () => {
+          this.editWalls = !this.editWalls;
+          wallsBtn.setAttribute('aria-pressed', this.editWalls);
+          this.hint.hidden = false;
+          this.hint.textContent = this.editWalls ? 'Wand anklicken: raumhoch → halbhoch → nur Sockel → ohne Fliesen' : 'Ziehen zum Drehen';
+        });
         this.showZones = false;
         const zonesBtn = box.querySelector('[data-3d-zones]');
         zonesBtn.addEventListener('click', () => {
@@ -326,6 +339,7 @@
           this.place = {};
           this.active = null;
           this.autoNotes = null;
+          this.wallMode = {};
           if (this.state) { this.build(this.state); if (this.onLayout) this.onLayout(); }
           this.render();
         });
@@ -391,7 +405,7 @@
         let last = null, drag = null;
         el.addEventListener('pointerdown', (e) => {
           this.hint.hidden = true;
-          drag = (e.pointerType === 'mouse' || this.moveMode) ? this.pick(e) : null;
+          drag = !this.editWalls && (e.pointerType === 'mouse' || this.moveMode) ? this.pick(e) : null;
           if (drag) this.highlight(drag, true); else last = e;
           el.setPointerCapture(e.pointerId);
         });
@@ -424,15 +438,31 @@
           last = e;
           this.render();
         });
-        const up = () => {
+        let down = null;
+        el.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; }, true);
+        const up = (e) => {
           if (drag) {
             this.place[drag.userData.key] = Object.assign({}, drag.userData.place);
             this.highlight(drag, false);
+            // Duschbereich wird raumhoch gefliest – Wände nach dem Verschieben der Dusche neu aufbauen
+            if (drag.userData.key === 'shower') this.build(this.state);
             this.renderChecks();
             this.render();
             if (this.onLayout) this.onLayout();
+          } else if (this.editWalls && down && e && e.type === 'pointerup' && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 6) {
+            this.ray.setFromCamera(this.ndc(e), this.camera);
+            const hit = this.ray.intersectObjects(this.wallMeshes || [], false)[0];
+            if (hit) {
+              const w = hit.object.userData.wall, next = MODES[(MODES.indexOf(this.modeOf(w)) + 1) % MODES.length];
+              this.wallMode[w] = next;
+              this.build(this.state);
+              this.render();
+              this.hint.hidden = false;
+              this.hint.textContent = WALL_NAMES[w] + ': ' + MODE_NAMES[next] + (this.spans[w] && this.spans[w].length ? ' (Duschbereich bleibt raumhoch)' : '');
+              if (this.onLayout) this.onLayout();
+            }
           }
-          last = null; drag = null;
+          last = null; drag = null; down = null;
         };
         el.addEventListener('pointerup', up);
         el.addEventListener('pointercancel', up);
@@ -639,28 +669,30 @@
           g.add(o);
           this.items.push(o);
         });
-        // Wände erst jetzt: das Fugenraster richtet sich nach den Armaturen
+        // Wände erst jetzt: das Fugenraster richtet sich nach den Armaturen, der Duschbereich nach der Dusche
+        this.computeSpans();
         this.computeJoints();
         if (s.h) {
           // Wandflächen als Umriss: oben begrenzt durch die Decke (ggf. Dachschräge), Fliesen bis wallH, darüber Putz
+          this.wallMeshes = [];
           wallDefs(s).forEach(([len, x, z, ry, at, name]) => {
-            const top = [];
-            for (let i = 0; i <= 48; i++) { const u = -len / 2 + (i * len) / 48; const q = at(u); top.push([u, ceilY(s, q[0], q[1])]); }
+            // [u, Deckenhöhe, Fliesenhöhe]
+            const top = this.wallProfile(name).map(([u, Y, Tt]) => [u - len / 2, Y, Tt]);
             const shape = (lo, hi) => {
               const sh = new T.Shape();
-              top.forEach(([u, y], i) => (i ? sh.lineTo(u, lo(y)) : sh.moveTo(u, lo(y))));
-              for (let i = top.length - 1; i >= 0; i--) sh.lineTo(top[i][0], hi(top[i][1]));
+              top.forEach((e, i) => (i ? sh.lineTo(e[0], lo(e)) : sh.moveTo(e[0], lo(e))));
+              for (let i = top.length - 1; i >= 0; i--) sh.lineTo(top[i][0], hi(top[i]));
               return new T.ShapeGeometry(sh);
             };
-            const add = (geo, mat) => { const m = new T.Mesh(geo, mat); m.position.set(x, 0, z); m.rotation.y = ry; g.add(m); };
-            if (s.wallH) {
-              const geo = shape(() => 0, (y) => Math.min(y, s.wallH));
+            const add = (geo, mat) => { const m = new T.Mesh(geo, mat); m.position.set(x, 0, z); m.rotation.y = ry; m.userData.wall = name; g.add(m); this.wallMeshes.push(m); };
+            if (top.some((e) => e[2] > 0.001)) {
+              const geo = shape(() => 0, (e) => e[2]);
               const uv = geo.attributes.uv;
-              const e = this.joints[name].eu;
-              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2 - e) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
+              const ej = this.joints[name].eu;
+              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2 - ej) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
               add(geo, this.tiledMat(this.wallTex));
             }
-            if (top.some(([, y]) => y > s.wallH + 0.001)) add(shape((y) => Math.min(y, s.wallH), (y) => y), paint);
+            if (top.some((e) => e[1] > e[2] + 0.001)) add(shape((e) => e[2], (e) => e[1]), paint);
           });
           if (s.slope) {
             // Schräge Dachfläche, durchscheinend, damit man von außen hineinsehen kann
@@ -689,6 +721,7 @@
         this.scene.add(g);
         this.itemDims();
         this.renderChecks();
+        if (this.onAreas) this.onAreas();
       }
       // Maßlinie von a nach b mit Endstrichen und Beschriftung in der Mitte
       dim(a, b, text, tick) {
@@ -865,7 +898,7 @@
             return sg;
           };
           o.userData.sides = { plus: side(sw / 2), minus: side(-sw / 2) };
-          if (tm) o.userData.wallPart = o.userData.sides;
+          if (tm) { o.userData.wallPart = o.userData.sides; o.userData.tileArea = 2 * sd * gh + 0.115 * (sd + gh); }
           if (/Tür|Schiebe|Nische/i.test(it.glass)) box(sw, gh, 0.008, glass(), 0, gh / 2, sd);
           const big = /40|50/.test(it.head), hand = /Hand/.test(it.head) && !/Regen/.test(it.head);
           if (hand) { box(0.02, 0.9, 0.02, chrome(), sw / 2 - 0.2, 1.4, 0.04); cyl(0.05, 0.02, chrome(), sw / 2 - 0.2, 1.85, 0.1).rotation.x = Math.PI / 2; }
@@ -906,6 +939,7 @@
           box(tl - 0.22, 0.01, td - 0.2, m({ color: 0xe3ecef, roughness: 0.05 }), 0, it.type === 'free' ? 0.585 : 0.595, td / 2);
           if (it.type === 'whirl') [-0.4, 0, 0.4].forEach((x) => cyl(0.03, 0.012, chrome(), x, 0.6, td - 0.18));
           o.userData.w = tl; o.userData.d = td;
+          if (it.type !== 'free') o.userData.tileArea = tl * 0.55;
           o.userData.elev = [[-tl / 2, tl / 2, 0, 0.6]];
           o.userData.conn = it.type === 'free' ? [] : [{ x: -0.08, y: 0.75, t: 'WW', n: 'Wannenarmatur', arm: true }, { x: 0.08, y: 0.75, t: 'KW', n: 'Wannenarmatur', arm: true }];
           if (it.type !== 'free') { o.userData.arm = 0; o.userData.armY = 0.75; o.userData.armName = 'Armatur'; }
@@ -987,6 +1021,87 @@
         });
       }
       armDir(wall) { return wall === 'back' || wall === 'right' ? 1 : -1; }
+      // ---------- Wandfliesen: Modus je Wand, Duschbereich immer raumhoch ----------
+      modeOf(wall) { return this.wallMode[wall] || this.size.wallMode || 'full'; }
+      // Weltachse (x bzw. z) -> Abstand ab linker Ecke vom Raum aus gesehen
+      axisToH(wall, a) { const len = this.wallLen(wall); return wall === 'back' || wall === 'right' ? a : len - a; }
+      // Duschbereiche je Wand als [von, bis] ab linker Ecke: eigene Wand und – bei Duschen in der Ecke – die Nachbarwand
+      computeSpans() {
+        const s = this.size, sp = this.spans = { back: [], front: [], left: [], right: [] };
+        this.items.filter((o) => o.userData.key === 'shower' && !(o.userData.place.dist > 0.05)).forEach((o) => {
+          const p = o.userData.place, u = o.userData, a0 = p.pos - u.w / 2, a1 = p.pos + u.w / 2;
+          const add = (w, b0, b1) => { const h0 = this.axisToH(w, b0), h1 = this.axisToH(w, b1); sp[w].push([Math.min(h0, h1), Math.max(h0, h1)]); };
+          add(p.wall, a0, a1);
+          const along = p.wall === 'back' || p.wall === 'front', len = along ? s.l : s.b;
+          const d0 = p.wall === 'back' || p.wall === 'left' ? 0 : (along ? s.b : s.l) - u.d, d1 = d0 + u.d;
+          if (a0 < 0.02) add(along ? 'left' : 'back', d0, d1);
+          if (a1 > len - 0.02) add(along ? 'right' : 'front', d0, d1);
+        });
+      }
+      // Profil einer Wand ab linker Ecke: [h, Deckenhöhe, Fliesenhöhe], mit exakten Kanten am Duschbereich
+      wallProfile(wall) {
+        const len = this.wallLen(wall), m = this.modeOf(wall), sp = (this.spans && this.spans[wall]) || [];
+        const hs = [];
+        for (let i = 0; i <= 48; i++) hs.push((i * len) / 48);
+        sp.forEach(([a, b]) => [a, b].forEach((e) => { if (e > 0.001 && e < len - 0.001) hs.push(e - 0.0005, e + 0.0005); }));
+        return hs.sort((x, y) => x - y).map((h) => {
+          const Y = this.ceilAt(wall, h);
+          const inShower = sp.some(([a, b]) => h >= a - 0.0001 && h <= b + 0.0001);
+          return [h, Y, inShower || m === 'full' ? Y : m === 'half' ? Math.min(Y, 1.2) : m === 'sockel' ? Math.min(Y, SOCKEL) : 0];
+        });
+      }
+      // Geflieste Wandfläche aus der Geometrie: Wände je Modus + Duschbereich, minus Tür/Fenster, plus Wannenschürze/Trennmauer
+      tileAreas() {
+        const s = this.size;
+        if (!s || !s.h || !this.spans) return null;
+        let a = 0;
+        ['back', 'front', 'left', 'right'].forEach((w) => {
+          const pr = this.wallProfile(w);
+          for (let i = 1; i < pr.length; i++) a += ((pr[i][2] + pr[i - 1][2]) / 2) * (pr[i][0] - pr[i - 1][0]);
+        });
+        this.items.forEach((o) => {
+          const d = o.userData, p = d.place;
+          if (d.tileArea) a += d.tileArea;
+          if (!d.opening || !d.elev) return;
+          const [x0, x1, y0, y1] = d.elev[0], c = this.fromLeft(p), pr = this.wallProfile(p.wall), n = 20;
+          for (let i = 0; i < n; i++) {
+            const h = c + x0 + ((i + 0.5) * (x1 - x0)) / n, e = pr.find((q) => q[0] >= h) || pr[pr.length - 1];
+            a -= (Math.max(0, Math.min(e[2], y1) - y0) * (x1 - x0)) / n;
+          }
+        });
+        return Math.max(0, a);
+      }
+      // Wandflächen ohne Fliesen (für Maler) und Deckenfläche – bei Dachschräge mit der echten Schrägfläche
+      paintAreas() {
+        const s = this.size;
+        if (!s || !s.h || !this.spans) return null;
+        let wall = 0;
+        ['back', 'front', 'left', 'right'].forEach((w) => {
+          const pr = this.wallProfile(w);
+          for (let i = 1; i < pr.length; i++) wall += ((pr[i][1] - pr[i][2] + pr[i - 1][1] - pr[i - 1][2]) / 2) * (pr[i][0] - pr[i - 1][0]);
+        });
+        this.items.forEach((o) => {
+          const d = o.userData;
+          if (!d.opening || !d.elev) return;
+          const [x0, x1, y0, y1] = d.elev[0], c = this.fromLeft(d.place), pr = this.wallProfile(d.place.wall), n = 20;
+          for (let i = 0; i < n; i++) {
+            const h = c + x0 + ((i + 0.5) * (x1 - x0)) / n, e = pr.find((q) => q[0] >= h) || pr[pr.length - 1];
+            wall -= (Math.max(0, Math.min(y1, e[1]) - Math.max(y0, e[2])) * (x1 - x0)) / n;
+          }
+        });
+        let ceil = s.l * s.b;
+        if (s.slope) {
+          const sl = s.slope, room = sl.side === 'back' || sl.side === 'front' ? s.b : s.l, along = room === s.b ? s.l : s.b;
+          const de = Math.min(sl.d, room), ye = sl.k + ((s.h - sl.k) * de) / Math.max(0.01, sl.d);
+          ceil += along * (Math.hypot(de, ye - sl.k) - de);
+        }
+        return { wall: Math.max(0, wall), ceil };
+      }
+      wallText() {
+        if (!this.size || !this.size.h || !this.spans) return '';
+        const parts = ['back', 'right', 'front', 'left'].map((w) => WALL_NAMES[w] + ' ' + MODE_NAMES[this.modeOf(w)]);
+        return parts.join(', ') + (Object.values(this.spans).some((x) => x.length) ? '; Duschbereich raumhoch' : '');
+      }
       // Objekt so setzen, dass seine Armatur auf dem bodenbündigen Raster mittig auf Fuge oder Fliese sitzt
       snapPos(o, wall, pos) {
         const j = (this.jointsBase || this.joints)[wall], h = j.pw / 2, k = this.armDir(wall) * (o.userData.arm || 0);
@@ -995,7 +1110,7 @@
       // Armaturhöhe auf die nächste Fuge bzw. Fliesenmitte legen (höchstens 10 cm verschieben)
       armHeight(y) {
         const ph = this.wallTex.ph, h = ph / 2, c = Math.round(y / h) * h;
-        return Math.abs(c - y) <= 0.1 && (!this.size.wallH || c < this.size.wallH) ? c : y;
+        return Math.abs(c - y) <= 0.1 ? c : y;
       }
       connY(k) { return k.arm ? this.armHeight(k.y) : k.y; }
       // ---------- Schutzbereiche nach DIN VDE 0100-701 (Ausgabe 2008-10) ----------
@@ -1070,8 +1185,9 @@
         if (!s || !this.joints || !this.room) return out;
         this.room.updateMatrixWorld(true);
         const mm = (v) => Math.round(v * 1000);
-        if (s.h && s.wallH) ['back', 'right', 'front', 'left'].forEach((w) => {
+        if (s.h) ['back', 'right', 'front', 'left'].forEach((w) => {
           const j = this.joints[w], nm = WALL_NAMES[w];
+          if (!this.wallProfile(w).some((e) => e[2] > 0.001)) return;
           if (j.status === 'ok') out.push({ grp: 'fuge', lvl: 'ok', t: nm + ': Wandfugen laufen in die Bodenfugen durch' });
           else if (j.status === 'shift') out.push({ grp: 'fuge', lvl: 'warn', t: nm + ': Raster an der Armatur (' + j.lead + ') ausgerichtet – Wandfugen ' + cmT(j.shift) + ' cm gegen die Bodenfugen versetzt. Tipp: ' + j.lead + ' um ' + cmT(j.shift) + ' cm verschieben, dann läuft beides durch.' });
           else if (j.status === 'near') out.push({ grp: 'fuge', lvl: 'warn', t: nm + ': Fugen laufen fast durch – max. ' + mm(j.dev) + ' mm Versatz (Fliese + 2-mm-Fuge passt nicht exakt ins Bodenraster)' });
@@ -1087,7 +1203,8 @@
           const nm = ITEM_NAMES[u.key] + (u.armName ? ' – ' + u.armName : '');
           let lvl = 'ok', t = nm + (dj <= 0.003 ? ': mittig auf der Fuge' : ': mittig auf der Fliese');
           if (dj > 0.003 && dm > 0.003) { lvl = 'warn'; t = nm + ': ' + cmT(Math.min(dj, dm)) + ' cm neben Fuge bzw. Fliesenmitte – verschieben („Fugenraster“ an)'; }
-          if (u.armY && (!s.wallH || u.armY < s.wallH)) {
+          const tTop = this.wallProfile(u.place.wall).find((e) => e[0] >= this.fromLeft(u.place) + this.armDir(u.place.wall) * u.arm * (u.place.wall === 'back' || u.place.wall === 'right' ? 1 : -1) - 0.001);
+          if (u.armY && tTop && u.armY < tTop[2]) {
             const y2 = this.armHeight(u.armY);
             t += Math.abs(y2 - u.armY) < 0.001 ? ', Höhe ' + cmT(u.armY) + ' cm passt' : ', Höhe auf ' + cmT(y2) + ' cm statt ' + cmT(u.armY) + ' cm (Fuge/Fliesenmitte)';
           }
@@ -1231,20 +1348,20 @@
       wallSVG(wall, kind) {
         const s = this.size, len = this.wallLen(wall), H = s.h, pad = 45;
         const X = (h) => cm(h), Y = (y) => cm(H - y);
-        const top = [];
-        for (let i = 0; i <= 48; i++) { const h = (i * len) / 48; top.push([h, this.ceilAt(wall, h)]); }
-        const poly = (f) => '0,' + Y(0) + ' ' + top.map(([h, y]) => X(h) + ',' + Y(f(y))).join(' ') + ' ' + X(len) + ',' + Y(0);
+        const top = this.wallProfile(wall);
+        const maxT = Math.max.apply(null, top.map((e) => e[2]));
+        const poly = (f) => '0,' + Y(0) + ' ' + top.map((e) => X(e[0]) + ',' + Y(f(e))).join(' ') + ' ' + X(len) + ',' + Y(0);
         const id = 'lcw-' + wall + '-' + kind;
         const tiles = kind === 'tiles';
         let o = this.svgOpen(-pad, -pad, cm(len) + 2 * pad, cm(H) + 2 * pad);
-        o += '<polygon points="' + poly((y) => y) + '" fill="#fff" stroke="#222" stroke-width="2"/>';
+        o += '<polygon points="' + poly((e) => e[1]) + '" fill="#fff" stroke="#222" stroke-width="2"/>';
         const tw = this.wallTex.pw, th = this.wallTex.ph, e = this.joints[wall].eu;
-        if (s.wallH) {
-          o += '<clipPath id="' + id + '"><polygon points="' + poly((y) => Math.min(y, s.wallH)) + '"/></clipPath>';
+        if (maxT > 0.001) {
+          o += '<clipPath id="' + id + '"><polygon points="' + poly((e) => e[2]) + '"/></clipPath>';
           o += '<g clip-path="url(#' + id + ')" stroke="' + (tiles ? '#b8955a' : '#e4dccf') + '" stroke-width="' + (tiles ? 0.8 : 0.5) + '">';
-          o += '<polygon points="' + poly((y) => Math.min(y, s.wallH)) + '" fill="' + (tiles ? '#f7f4ef' : '#fcfbf9') + '" stroke="none"/>';
-          for (let x = e; x < len - 0.001; x += tw) if (x > 0.001) o += '<line x1="' + X(x) + '" y1="' + Y(0) + '" x2="' + X(x) + '" y2="' + Y(s.wallH) + '"/>';
-          for (let y = th; y < s.wallH - 0.001; y += th) o += '<line x1="0" y1="' + Y(y) + '" x2="' + X(len) + '" y2="' + Y(y) + '"/>';
+          o += '<polygon points="' + poly((e) => e[2]) + '" fill="' + (tiles ? '#f7f4ef' : '#fcfbf9') + '" stroke="none"/>';
+          for (let x = e; x < len - 0.001; x += tw) if (x > 0.001) o += '<line x1="' + X(x) + '" y1="' + Y(0) + '" x2="' + X(x) + '" y2="' + Y(maxT) + '"/>';
+          for (let y = th; y < maxT - 0.001; y += th) o += '<line x1="0" y1="' + Y(y) + '" x2="' + X(len) + '" y2="' + Y(y) + '"/>';
           o += '</g>';
         }
         this.onWall(wall).forEach((it) => {
@@ -1259,7 +1376,7 @@
         });
         o += this.svgDim(0, Y(0) + 24, X(len), Y(0) + 24, fmtM(len));
         o += this.svgDim(-24, Y(0), -24, Y(H), fmtM(H), true);
-        if (tiles && s.wallH) o += '<text x="0" y="' + (Y(0) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(this.wallTex.tw) + ' × ' + cmT(this.wallTex.th) + ' cm, Fuge 2 mm · Randstück links ' + cmT(this.joints[wall].edgeL) + ' cm, rechts ' + cmT(this.joints[wall].edgeR) + ' cm · ' + JOINT_TXT[this.joints[wall].status] + (s.wallH < H - 0.01 ? ' · gefliest bis ' + fmtM(s.wallH) : '') + '</text>';
+        if (tiles && maxT > 0.001) o += '<text x="0" y="' + (Y(0) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(this.wallTex.tw) + ' × ' + cmT(this.wallTex.th) + ' cm, Fuge 2 mm · Randstück links ' + cmT(this.joints[wall].edgeL) + ' cm, rechts ' + cmT(this.joints[wall].edgeR) + ' cm · ' + JOINT_TXT[this.joints[wall].status] + ' · ' + MODE_NAMES[this.modeOf(wall)] + (this.spans[wall].length ? ', Duschbereich raumhoch' : '') + '</text>';
         return o + '</svg>';
       }
       floorSVG(kind) {
@@ -1421,6 +1538,8 @@
         this.room3d = this.$('[data-3d]') ? new LcRoom3D(this.$('[data-3d]')) : null;
         if (this.room3d) {
           this.room3d.onLayout = () => { if (this.flow[this.idx] === 'anfrage') this.summary(); };
+          // Fliesenfläche hängt an der 3D-Planung: nach jedem Neuaufbau Mengen & Preis aktualisieren
+          this.room3d.onAreas = () => { this.update(); if (this.flow[this.idx] === 'anfrage') this.summary(); };
           this.room3d.meta = () => this.printMeta();
         }
         this.addEventListener('change', (e) => {
@@ -1476,6 +1595,8 @@
       }
       groupVisible(g) {
         if (!this.projectFits(g)) return false;
+        // LED-Spots nur mit abgehängter Decke
+        if (/Spots/.test(g.name)) return this.labels('Decke').some((t) => /Abgehängt/.test(t));
         // Nischen gibt es nur zusammen mit einer gemauerten Trennwand
         if (/Trennmauer/.test(g.name)) {
           const ab = this.opts.find((x) => x.name === 'Duschabtrennung');
@@ -1497,7 +1618,7 @@
         } else {
           this.choice[g.name] = el.value ? [el.value] : [];
         }
-        if (g.name === 'Dusche' || g.name === 'Duschabtrennung') this.renderOptions('A');
+        if (g.name === 'Dusche' || g.name === 'Duschabtrennung' || /^Decke/.test(g.name)) this.renderOptions('A');
       }
       onProject() {
         const bath = this.isBath();
@@ -1538,9 +1659,13 @@
           const l = this.num('[data-m="l"]'), b = this.num('[data-m="b"]'), h = this.num('[data-m="h"]') || 2.5;
           const mode = this.$('[data-m="wall"]').value;
           const floor = l * b;
-          const wh = mode === 'full' ? h : mode === 'half' ? 1.2 : 0;
-          const wall = wh && floor ? Math.max(0, wallArea({ l, b, h, slope: this.slope3d() }, wh) - 2.5) : 0;
-          return { floor, wall };
+          const wh = mode === 'full' ? h : mode === 'half' ? 1.2 : mode === 'sockel' ? SOCKEL : 0;
+          // Genau aus der 3D-Planung (Wandmodus, Duschbereich, Tür/Fenster), sonst pauschal mit 2,5 m² Abzug
+          const r3 = this.room3d && this.room3d.size && this.room3d.size.l === l && this.room3d.size.b === b && this.room3d.size.h === h ? this.room3d.tileAreas() : null;
+          const wall = r3 !== null ? r3 : wh && floor ? Math.max(0, wallArea({ l, b, h, slope: this.slope3d() }, wh) - 2.5) : 0;
+          const pa = r3 !== null ? this.room3d.paintAreas() : null;
+          const paint = pa ? pa.wall : floor ? Math.max(0, wallArea({ l, b, h, slope: this.slope3d() }, h) - 2.5 - wall) : 0;
+          return { floor, wall, paint, ceil: pa ? pa.ceil : floor };
         }
         return { floor: this.num('[data-m="area"]'), wall: 0 };
       }
@@ -1588,7 +1713,7 @@
           (this.choice[g.name] || []).forEach((id) => {
             const it = g.items.find((x) => x.id === id);
             if (!it || !this.projFits(it.proj)) return;
-            const qty = it.unit === 'm2_boden' ? a.floor : it.unit === 'm2_wand' ? a.wall : it.unit === 'm2_fliesen' ? tiles : 1;
+            const qty = it.unit === 'm2_boden' ? a.floor : it.unit === 'm2_wand' ? a.wall : it.unit === 'm2_fliesen' ? tiles : it.unit === 'm2_rest' ? a.paint || 0 : it.unit === 'm2_decke' ? a.ceil || 0 : 1;
             out.push({ label: g.name + ': ' + it.label, detail: it.unit === 'pauschal' ? 'pauschal' : NUM.format(qty) + ' m² × ' + EUR.format(it.price), sum: it.price * qty });
           });
         });
@@ -1627,6 +1752,8 @@
         if (sl) facts.push(['Dachschräge', { back: 'hinten', front: 'vorne', left: 'links', right: 'rechts' }[sl.side] + ', Kniestock ' + fmtM(sl.k) + ', reicht ' + fmtM(sl.d) + ' in den Raum']);
         facts.push(['Bodenfliese', tile(this.sel.boden)]);
         if (this.isBath()) facts.push(['Wandfliese', tile(this.sel.wand || this.sel.boden)]);
+        const wt = this.room3d.wallText();
+        if (wt) facts.push(['Wandfliesen', esc(wt)]);
         const lay = this.room3d.layoutText(true);
         if (lay.length) facts.push(['Aufteilung', lay.map(esc).join('<br>')]);
         return { title: { komplettbad: 'Komplettbadsanierung', bad: 'Bad neu fliesen', wohnen: 'Küche & Wohnbereich', terrasse: 'Terrasse & Pool' }[this.project()] || 'Planung', facts };
@@ -1682,7 +1809,8 @@
           const mode = this.$('[data-m="wall"]').value;
           return {
             l, b, h,
-            wallH: mode === 'full' ? h : mode === 'half' ? 1.2 : 0,
+            wallH: mode === 'full' ? h : mode === 'half' ? 1.2 : mode === 'sockel' ? SOCKEL : 0,
+            wallMode: mode,
             slope: this.slope3d(),
             floor, wall: this.tile3d(this.sel.wand),
             items: this.items3d(),
@@ -1858,6 +1986,7 @@
           '\nLeistung: ' + leistung + '\n' +
           (lines.length ? 'Material:\n' + lines.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + (l.area ? ', ' + l.qty + ' m²' : (l.qty ? ', ' + l.qty + ' Stk' : '')) + (l.sum ? ' = ' + EUR2.format(l.sum / 100) : '')).join('\n') + '\n' : '') +
           (svText ? 'Ausstattung & Leistungen:\n' + svText + '\n' : '') +
+          (this.room3d && this.isBath() && this.room3d.wallText() ? 'Wandfliesen: ' + this.room3d.wallText() + '\n' : '') +
           (layout.length ? 'Aufteilung laut 3D-Vorschau:\n' + layout.map((t) => '- ' + t).join('\n') + '\n' : '') +
           'Geschätzt gesamt: ' + range(est.min, est.max);
         this.$('[data-f="config"]').value = text;
@@ -2127,7 +2256,7 @@
       "id": "options_extra",
       "label": "Weitere Optionen (gleiches Format)",
       "info": "Wird an die Liste oben angehängt. Gruppen mit „Trennmauer“ im Namen erscheinen nur, wenn bei der Duschabtrennung eine Trennmauer gewählt ist.",
-      "default": "A|bad|Duschabtrennung|single|Trennmauer aus Ytong (gemauert, je Maß)|700|700|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|1 Nische|200|200|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|2 Nischen|400|400|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|3 Nischen|600|600|pauschal"
+      "default": "A|bad|Duschabtrennung|single|Trennmauer aus Ytong (gemauert, je Maß)|700|700|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|1 Nische|200|200|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|2 Nischen|400|400|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|3 Nischen|600|600|pauschal\nA|bad|Maler: Wände ohne Fliesen|single|Spachteln (Q2) & 2× streichen (Feuchtraumfarbe)|22|30|m2_rest\nA|bad|Maler: Wände ohne Fliesen|single|Vliestapete & 2× streichen|30|40|m2_rest\nA|bad|Decke (Trockenbau & Maler)|single|Bestehende Decke spachteln & streichen|25|35|m2_decke\nA|bad|Decke (Trockenbau & Maler)|single|Bestehende Decke: Vliestapete & streichen|32|42|m2_decke\nA|bad|Decke (Trockenbau & Maler)|single|Abgehängte Rigips-Decke (Feuchtraumplatte) + spachteln & streichen|85|110|m2_decke\nA|bad|Decke (Trockenbau & Maler)|single|Abgehängte Rigips-Decke (Feuchtraumplatte) + Vliestapete & streichen|95|120|m2_decke\nA|bad|LED-Spots in der abgehängten Decke|single|4 LED-Spots inkl. Anschluss|440|600|pauschal\nA|bad|LED-Spots in der abgehängten Decke|single|6 LED-Spots inkl. Anschluss|660|900|pauschal\nA|bad|LED-Spots in der abgehängten Decke|single|8 LED-Spots inkl. Anschluss|880|1200|pauschal"
     },
     { "type": "header", "content": "Bilder der Projektarten" },
     { "type": "image_picker", "id": "img_komplett", "label": "Komplettbadsanierung" },
