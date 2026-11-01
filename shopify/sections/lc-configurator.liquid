@@ -290,7 +290,7 @@
         this.view = { theta: -0.65, phi: 1.0, zoom: 1 };
         this.mode = '3d';
         const modeBtn = box.querySelector('[data-3d-mode]');
-        modeBtn.addEventListener('click', () => {
+        modeBtn?.addEventListener('click', () => {
           this.mode = this.mode === '3d' ? '2d' : '3d';
           modeBtn.textContent = this.mode === '3d' ? '2D-Grundriss' : '3D-Ansicht';
           this.box.classList.toggle('is-2d', this.mode === '2d');
@@ -304,7 +304,7 @@
         this.wallMode = {};
         this.editWalls = false;
         const wallsBtn = box.querySelector('[data-3d-walls]');
-        wallsBtn.addEventListener('click', () => {
+        wallsBtn?.addEventListener('click', () => {
           this.editWalls = !this.editWalls;
           wallsBtn.setAttribute('aria-pressed', this.editWalls);
           this.hint.hidden = false;
@@ -312,15 +312,15 @@
         });
         this.showZones = false;
         const zonesBtn = box.querySelector('[data-3d-zones]');
-        zonesBtn.addEventListener('click', () => {
+        zonesBtn?.addEventListener('click', () => {
           this.showZones = !this.showZones;
           zonesBtn.setAttribute('aria-pressed', this.showZones);
           if (this.state && this.T) { this.build(this.state); this.render(); }
         });
-        box.querySelector('[data-3d-auto]').addEventListener('click', () => this.autoPlan());
+        box.querySelector('[data-3d-auto]')?.addEventListener('click', () => this.autoPlan());
         const snapBtn = box.querySelector('[data-3d-snap]');
-        snapBtn.addEventListener('click', () => { this.snapOn = !this.snapOn; snapBtn.setAttribute('aria-pressed', this.snapOn); });
-        box.querySelector('[data-3d-print]').addEventListener('click', () => this.print(this.meta ? this.meta() : { title: 'Badplanung', facts: [] }));
+        snapBtn?.addEventListener('click', () => { this.snapOn = !this.snapOn; snapBtn.setAttribute('aria-pressed', this.snapOn); });
+        box.querySelector('[data-3d-print]')?.addEventListener('click', () => this.print(this.meta ? this.meta() : { title: 'Badplanung', facts: [] }));
         box.querySelectorAll('[data-3d-extra]').forEach((b) => b.addEventListener('click', () => {
           const k = b.getAttribute('data-3d-extra');
           this.extra[k] = !this.extra[k];
@@ -329,7 +329,7 @@
           if (this.onLayout) this.onLayout();
         }));
         const dimsBtn = box.querySelector('[data-3d-dims]');
-        dimsBtn.addEventListener('click', () => {
+        dimsBtn?.addEventListener('click', () => {
           this.showDims = !this.showDims;
           dimsBtn.setAttribute('aria-pressed', this.showDims);
           if (this.dimsG) this.dimsG.visible = this.showDims;
@@ -337,7 +337,7 @@
           this.render();
         });
         box.querySelectorAll('[data-3d-zoom]').forEach((b) => b.addEventListener('click', () => { this.view.zoom = Math.min(2.2, Math.max(0.6, this.view.zoom * (b.getAttribute('data-3d-zoom') === '1' ? 1.2 : 1 / 1.2))); this.render(); }));
-        box.querySelector('[data-3d-reset]').addEventListener('click', () => {
+        box.querySelector('[data-3d-reset]')?.addEventListener('click', () => {
           this.view = { theta: -0.65, phi: 1.0, zoom: 1 };
           this.place = {};
           this.active = null;
@@ -346,8 +346,8 @@
           if (this.state) { this.build(this.state); if (this.onLayout) this.onLayout(); }
           this.render();
         });
-        box.querySelector('[data-3d-save]').addEventListener('click', () => this.save());
-        this.moveBtn.addEventListener('click', () => {
+        box.querySelector('[data-3d-save]')?.addEventListener('click', () => this.save());
+        this.moveBtn?.addEventListener('click', () => {
           this.moveMode = !this.moveMode;
           this.moveBtn.setAttribute('aria-pressed', this.moveMode);
           this.stage.classList.toggle('is-move', this.moveMode);
@@ -491,7 +491,7 @@
       // Ohne Motive: jede Platte ein anderer Ausschnitt des Fliesenbilds, zufällig gespiegelt, leicht variiert.
       // Raster = Fliese + 2-mm-Fuge, daher stimmen Fugenbild, Maße und Pläne weiterhin exakt.
       texture(t) {
-        const id = t ? t.url + '|' + (t.motifs || []).join(',') + '|' + t.w + '|' + t.h : 'none';
+        const id = t ? t.url + '|' + (t.motifs || []).join(',') + '|' + t.w + '|' + t.h + '|' + (t.grout || '') : 'none';
         if (this.tex[id]) return this.tex[id];
         const T = this.T;
         const tw = t ? Math.max(t.w, t.h) : 60, th = t ? Math.min(t.w, t.h) : 60;
@@ -556,7 +556,8 @@
               ctx.fillRect(i * W, j * H, W, H);
             }
           }
-          ctx.fillStyle = lum > 0.62 ? 'rgba(150,143,133,.85)' : lum > 0.35 ? 'rgba(222,218,210,.9)' : 'rgba(120,116,110,.9)';
+          // Fugenfarbe: fest gewählt (t.grout, z. B. im Fliesen-Visualizer) oder passend zur Helligkeit der Fliese
+          ctx.fillStyle = t && t.grout ? t.grout : lum > 0.62 ? 'rgba(150,143,133,.85)' : lum > 0.35 ? 'rgba(222,218,210,.9)' : 'rgba(120,116,110,.9)';
           for (let i = 0; i < cols; i++) ctx.fillRect(i * W, 0, grout, cv.height);
           for (let j = 0; j < rows; j++) ctx.fillRect(0, j * H, cv.width, grout);
         };
@@ -1687,6 +1688,10 @@
       }
     }
 
+    // Für den Fliesen-Visualizer (Section lc-visualizer) freigeben – Shopify bündelt die Section-Skripte, die Reihenfolge ist offen
+    window.LcRoom3D = LcRoom3D;
+    document.dispatchEvent(new CustomEvent('lc:room3d-ready'));
+
     customElements.define('lc-configurator', class extends HTMLElement {
       connectedCallback() {
         this.$ = (q) => this.querySelector(q);
@@ -2036,7 +2041,7 @@
         const a = this.areas().floor;
         const terr = this.project() === 'terrasse';
         const l = Math.sqrt(a * (terr ? 1.6 : 1.4));
-        return { l, b: a / l, h: terr ? 0 : 2.6, wallH: 0, floor, wall: null, items: [], ground: terr };
+        return { l, b: a / l, h: terr ? 0 : 2.6, wallH: 0, wallMode: 'none', floor, wall: null, items: [], ground: terr };
       }
       // Sanitärobjekte für die 3D-Ansicht aus Ausstattung und gewählten Produkten.
       // Solange die Ausstattung noch nicht gewählt wurde (oder bei "Bad neu fliesen"), zeigen wir ein Standardbad.

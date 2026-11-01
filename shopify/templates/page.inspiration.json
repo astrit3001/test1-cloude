@@ -3,14 +3,63 @@
     "inspiration": {
       "type": "lc-inspiration",
       "blocks": {
-        "baeder": { "type": "tab", "settings": { "label": "Bäder", "collection": "fliesen-marmoroptik", "limit": 24 } },
-        "wohnen": { "type": "tab", "settings": { "label": "Wohnen", "collection": "fliesen-holzoptik", "limit": 24 } },
-        "stein": { "type": "tab", "settings": { "label": "Stein & Beton", "collection": "fliesen-steinoptik", "limit": 24 } },
-        "xxl": { "type": "tab", "settings": { "label": "Großformat", "collection": "fliesen-grossformat", "limit": 24 } },
-        "outdoor": { "type": "tab", "settings": { "label": "Outdoor", "collection": "terrassenplatten-2-cm-20-mm-outdoor-feinsteinzeug", "limit": 24 } },
-        "mosaik": { "type": "tab", "settings": { "label": "Mosaik", "collection": "mosaike", "limit": 24 } }
+        "baeder": {
+          "type": "tab",
+          "settings": {
+            "label": "Bäder",
+            "collection": "fliesen-marmoroptik",
+            "limit": 24
+          }
+        },
+        "wohnen": {
+          "type": "tab",
+          "settings": {
+            "label": "Wohnen",
+            "collection": "fliesen-holzoptik",
+            "limit": 24
+          }
+        },
+        "stein": {
+          "type": "tab",
+          "settings": {
+            "label": "Stein & Beton",
+            "collection": "fliesen-steinoptik",
+            "limit": 24
+          }
+        },
+        "xxl": {
+          "type": "tab",
+          "settings": {
+            "label": "Großformat",
+            "collection": "fliesen-grossformat",
+            "limit": 24
+          }
+        },
+        "outdoor": {
+          "type": "tab",
+          "settings": {
+            "label": "Outdoor",
+            "collection": "terrassenplatten-2-cm-20-mm-outdoor-feinsteinzeug",
+            "limit": 24
+          }
+        },
+        "mosaik": {
+          "type": "tab",
+          "settings": {
+            "label": "Mosaik",
+            "collection": "mosaike",
+            "limit": 24
+          }
+        }
       },
-      "block_order": ["baeder", "wohnen", "stein", "xxl", "outdoor", "mosaik"],
+      "block_order": [
+        "baeder",
+        "wohnen",
+        "stein",
+        "xxl",
+        "outdoor",
+        "mosaik"
+      ],
       "settings": {
         "title": "Inspiration",
         "intro": "Lassen Sie sich von fertigen Räumen inspirieren – Bild anklicken, Fliese ansehen und direkt im Badplaner ausprobieren.",
@@ -19,7 +68,28 @@
         "padding_top": 32,
         "padding_bottom": 40
       }
+    },
+    "visualizer": {
+      "type": "lc-visualizer",
+      "settings": {
+        "title": "Fliesen-Visualizer",
+        "intro": "Raum wählen, Fläche anklicken, Fliese aussuchen – und sofort in 3D sehen, wie es wirkt.",
+        "whatsapp": "4917662596394",
+        "planner_url": "/",
+        "col_1": "fliesen-marmoroptik",
+        "col_2": "fliesen-holzoptik",
+        "col_3": "fliesen-steinoptik",
+        "col_4": "fliesen-grossformat",
+        "col_5": "terrassenplatten-2-cm-20-mm-outdoor-feinsteinzeug",
+        "col_6": "mosaike",
+        "per_collection": 24,
+        "padding_top": 16,
+        "padding_bottom": 48
+      }
     }
   },
-  "order": ["inspiration"]
+  "order": [
+    "inspiration",
+    "visualizer"
+  ]
 }

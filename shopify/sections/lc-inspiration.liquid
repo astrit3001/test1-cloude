@@ -65,6 +65,7 @@
             <p class="lc-insp__formats" data-m-formats></p>
             <div class="lc-insp__thumbs" data-m-thumbs></div>
             <div class="lc-insp__actions">
+              <button type="button" class="lc-btn" data-m-vis hidden>Im Raum ansehen</button>
               <a class="lc-btn" data-m-url href="#">Zum Produkt</a>
               <a class="lc-btn lc-btn--light" data-m-plan href="#">Im Badplaner ausprobieren</a>
               {%- if wa != blank -%}<a class="lc-btn lc-insp__wa" data-m-wa href="#" target="_blank" rel="noopener">Beratung per WhatsApp</a>{%- endif -%}
@@ -105,6 +106,11 @@
         th.forEach((u) => { const i = document.createElement('img'); i.src = u; i.alt = ''; i.loading = 'lazy'; box.appendChild(i); });
         if (+d.colors > 1) { const s = document.createElement('span'); s.textContent = d.colors + ' Varianten'; box.appendChild(s); }
         this.$('[data-m-url]').href = d.url;
+        // Fliesen-Visualizer auf derselben Seite (Section lc-visualizer): Fliese direkt in den 3D-Raum legen
+        const vis = document.querySelector('lc-visualizer');
+        const visBtn = this.$('[data-m-vis]');
+        visBtn.hidden = !(vis && vis.querySelector('[data-tile-json]') && vis.tiles && vis.tiles.some((t) => String(t.id) === String(d.id)));
+        visBtn.onclick = () => { this.close(); document.dispatchEvent(new CustomEvent('lc:visualize', { detail: { id: d.id } })); };
         this.$('[data-m-plan]').href = this.dataset.planner + (this.dataset.planner.indexOf('?') > -1 ? '&' : '?') + 'lc_fliese=' + d.id + '#konfigurator-bad';
         const wa = this.$('[data-m-wa]');
         if (wa) wa.href = 'https://wa.me/' + this.dataset.wa + '?text=' + encodeURIComponent('Guten Tag, ich interessiere mich für ' + d.title + ' (' + location.origin + d.url + ').');
@@ -120,6 +126,7 @@
 {% endjavascript %}
 
 {% stylesheet %}
+  .lc-insp__actions [hidden] { display: none; }
   .lc-insp__intro { text-align: center; max-width: 720px; margin: -10px auto 24px; color: #6f675c; font-size: 15px; line-height: 1.6; }
   .lc-insp__tabs { display: flex; flex-wrap: wrap; gap: 10px; padding: 18px; background: #f1efec; margin-bottom: 28px; }
   .lc-insp__tab { border: 1px solid transparent; background: #e3e0db; color: #1c1b19; padding: 12px 22px; font-size: 16px; cursor: pointer; font-family: inherit; }

@@ -1,0 +1,390 @@
+{%- comment -%}
+  Fliesen-Visualizer für die Inspirationsseite (Ablauf wie bei Herstellern: Raum → Optik → Fliese → Fläche).
+  Nutzt die 3D-Technik des Badplaners (LcRoom3D aus lc-configurator), aber ohne Maße, Preise und Anfrage.
+  Übernimmt ?lc_fliese=<Produkt-ID> und reagiert auf das Ereignis "lc:visualize" (aus lc-inspiration).
+{%- endcomment -%}
+{%- liquid
+  assign s = section.settings
+  assign wa = s.whatsapp | remove: '+' | remove: ' '
+  assign seen = ','
+-%}
+<section id="visualizer" class="lc-section lc-vis-section" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
+  <div class="lc-wrap">
+    {%- if s.title != blank -%}<div class="lc-heading"><h2>{{ s.title }}</h2></div>{%- endif -%}
+    {%- if s.intro != blank -%}<p class="lc-vis__intro">{{ s.intro }}</p>{%- endif -%}
+
+    <lc-visualizer class="lc-vis" data-wa="{{ wa }}" data-planner="{{ s.planner_url | default: '/' }}">
+      {%- comment -%} Jede Fliese in einem eigenen Block: ein fehlerhaftes Produkt legt nicht die ganze Auswahl lahm {%- endcomment -%}
+      {%- for i in (1..6) -%}
+        {%- assign key = 'col_' | append: i -%}
+        {%- assign col = s[key] -%}
+        {%- if col != blank -%}
+          {%- for p in col.products limit: s.per_collection -%}
+            {%- assign pid = ',' | append: p.id | append: ',' -%}
+            {%- unless seen contains pid -%}
+              {%- assign seen = seen | append: p.id | append: ',' -%}
+              <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: col.title -%}</script>
+            {%- endunless -%}
+          {%- endfor -%}
+        {%- endif -%}
+      {%- endfor -%}
+
+      <div class="lc-vis__layout">
+        <div class="lc-vis__view">
+          <div class="lc-vis__3d" data-3d>
+            <div class="lc-vis__stage" data-3d-stage>
+              <span class="lc-vis__hint" data-3d-hint>3D-Vorschau wird geladen …</span>
+            </div>
+            <div class="lc-vis__bar">
+              <button type="button" data-3d-zoom="1" aria-label="Näher heran">+</button>
+              <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
+              <button type="button" data-3d-mode>2D-Grundriss</button>
+              <button type="button" data-3d-save>Als Bild speichern</button>
+            </div>
+          </div>
+          <ul class="lc-vis__sum" data-sum></ul>
+          <div class="lc-vis__actions">
+            <a class="lc-btn" data-plan href="#">Im Badplaner weiterplanen</a>
+            {%- if wa != blank -%}<a class="lc-btn lc-btn--light" data-wa-link href="#" target="_blank" rel="noopener">Beratung per WhatsApp</a>{%- endif -%}
+          </div>
+          <p class="lc-vis__note">Vereinfachte Darstellung im echten Fliesenformat, Sanitärobjekte symbolisch. Farbe und Struktur können je nach Bildschirm abweichen – Muster sehen Sie in unserer Ausstellung.</p>
+        </div>
+
+        <div class="lc-vis__panel">
+          <div class="lc-vis__group">
+            <span class="lc-vis__label">1 · Raum</span>
+            <div class="lc-vis__chips" data-room>
+              <button type="button" data-v="bad" class="is-on">Bad</button>
+              <button type="button" data-v="wohnen">Wohnen &amp; Küche</button>
+              <button type="button" data-v="terrasse">Terrasse</button>
+            </div>
+            <div class="lc-vis__chips lc-vis__chips--small" data-size>
+              <button type="button" data-v="0">klein</button>
+              <button type="button" data-v="1" class="is-on">mittel</button>
+              <button type="button" data-v="2">groß</button>
+            </div>
+          </div>
+
+          <div class="lc-vis__group">
+            <span class="lc-vis__label">2 · Fläche</span>
+            <div class="lc-vis__chips" data-surface>
+              <button type="button" data-v="floor" class="is-on">Boden</button>
+              <button type="button" data-v="wall" data-bath-only>Wände</button>
+              <button type="button" data-v="accent" data-bath-only>Akzentfläche</button>
+            </div>
+            <div class="lc-vis__opts" data-opts="wall" hidden>
+              <label>Fliesenhöhe
+                <select data-wallmode>
+                  <option value="full">raumhoch</option>
+                  <option value="half">halbhoch (1,20 m)</option>
+                  <option value="sockel">nur Sockel</option>
+                </select>
+              </label>
+              <label class="lc-vis__check"><input type="checkbox" data-same checked> wie Boden</label>
+            </div>
+            <div class="lc-vis__opts" data-opts="accent" hidden>
+              <label>Wo
+                <select data-zone>
+                  <option value="dusche">Duschrückwand</option>
+                  <option value="waschtisch">Wand hinter Waschtisch</option>
+                  <option value="wc">Wand hinter WC</option>
+                  <option value="back">ganze Rückwand</option>
+                </select>
+              </label>
+              <label>Verlegemuster
+                <select data-pattern>
+                  <option value="standard">normal (Raster)</option>
+                  <option value="halb">Halbverband</option>
+                  <option value="stack">Stripes senkrecht</option>
+                  <option value="fisch">Fischgrät 45°</option>
+                  <option value="fisch90">Fischgrät 90°</option>
+                </select>
+              </label>
+              <button type="button" class="lc-vis__link" data-accent-off>Akzentfläche entfernen</button>
+            </div>
+            <div class="lc-vis__opts">
+              <span>Fugenfarbe</span>
+              <div class="lc-vis__grout" data-grout>
+                <button type="button" data-v="" class="is-on" title="automatisch">auto</button>
+                <button type="button" data-v="#f4f2ee" style="--c:#f4f2ee" aria-label="Weiß"></button>
+                <button type="button" data-v="#bdb7ad" style="--c:#bdb7ad" aria-label="Silbergrau"></button>
+                <button type="button" data-v="#8e8a84" style="--c:#8e8a84" aria-label="Zementgrau"></button>
+                <button type="button" data-v="#c9b79a" style="--c:#c9b79a" aria-label="Beige"></button>
+                <button type="button" data-v="#3b3936" style="--c:#3b3936" aria-label="Anthrazit"></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="lc-vis__group">
+            <span class="lc-vis__label">3 · Fliese <em data-target>für den Boden</em></span>
+            <div class="lc-vis__chips lc-vis__chips--small" data-optics></div>
+            <div class="lc-vis__tiles" data-tiles></div>
+            <label class="lc-vis__variant" data-variant-wrap hidden>Farbe / Format
+              <select data-variant></select>
+            </label>
+          </div>
+        </div>
+      </div>
+    </lc-visualizer>
+  </div>
+</section>
+
+{% javascript %}
+  if (!customElements.get('lc-visualizer')) {
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const clean = (t) => String(t).replace(/\s*[–-]\s*Preis pro (m²|m2|Stück)\s*$/i, '');
+    const short = (c) => String(c).split(' – ')[0].replace(/^Fliesen in /, '').replace('Beton- & Zementoptik', 'Betonoptik');
+    // Raumgrößen [Länge, Breite, Höhe] in m: klein / mittel / groß
+    const SIZES = {
+      bad: [[2.0, 1.7, 2.5], [2.6, 2.1, 2.5], [3.4, 2.6, 2.5]],
+      wohnen: [[3.5, 3.0, 2.6], [4.8, 3.8, 2.6], [6.5, 4.5, 2.6]],
+      terrasse: [[3.0, 2.5, 0], [4.5, 3.5, 0], [6.0, 4.5, 0]],
+    };
+    const BATH_ITEMS = [
+      { key: 'shower', w: 0.9, d: 0.9, tray: false, drain: '', head: '', glass: '', extras: [], niches: 0 },
+      { key: 'wc', stand: false, dusch: false },
+      { key: 'vanity', w: 0, double: false, stand: false, color: 'wood', led: false },
+    ];
+    const SURF = { floor: 'für den Boden', wall: 'für die Wände', accent: 'für die Akzentfläche' };
+    const SURF_SHORT = { floor: 'Boden', wall: 'Wände', accent: 'Akzentfläche' };
+    // LcRoom3D kommt aus dem Badplaner-Skript; Shopify lädt die Section-Skripte gebündelt, die Reihenfolge ist offen
+    const room3d = () => new Promise((res, rej) => {
+      if (window.LcRoom3D) return res(window.LcRoom3D);
+      const t = setTimeout(() => rej(new Error('no-3d')), 8000);
+      document.addEventListener('lc:room3d-ready', () => { clearTimeout(t); res(window.LcRoom3D); }, { once: true });
+    });
+
+    customElements.define('lc-visualizer', class extends HTMLElement {
+      $(q) { return this.querySelector(q); }
+      connectedCallback() {
+        if (this.started) return;
+        this.started = true;
+        this.tiles = [];
+        this.querySelectorAll('[data-tile-json]').forEach((el) => { try { this.tiles.push(JSON.parse(el.textContent)); } catch (e) {} });
+        this.st = { room: 'bad', size: 1, surface: 'floor', floor: null, wall: null, accent: null, same: true, wallMode: 'full', zone: 'dusche', pattern: 'standard', grout: '', optic: '' };
+        // Vorwahl: ?lc_fliese=<Produkt-ID> oder die erste Fliese
+        const pre = new URLSearchParams(location.search).get('lc_fliese');
+        const first = this.tiles.find((t) => String(t.id) === pre) || this.tiles[0];
+        if (first) this.st.floor = { p: first, vid: (first.vs[0] || {}).id };
+
+        const chips = (sel, fn) => this.$(sel).addEventListener('click', (e) => {
+          const b = e.target.closest('button[data-v]');
+          if (!b || b.hidden) return;
+          this.$(sel).querySelectorAll('button').forEach((x) => x.classList.toggle('is-on', x === b));
+          fn(b.dataset.v);
+          this.refresh();
+        });
+        chips('[data-room]', (v) => { this.st.room = v; if (v !== 'bad') this.st.surface = 'floor'; });
+        chips('[data-size]', (v) => { this.st.size = +v; });
+        chips('[data-surface]', (v) => { this.st.surface = v; });
+        chips('[data-grout]', (v) => { this.st.grout = v; });
+        this.$('[data-wallmode]').addEventListener('change', (e) => { this.st.wallMode = e.target.value; this.refresh(); });
+        this.$('[data-same]').addEventListener('change', (e) => { this.st.same = e.target.checked; this.refresh(); });
+        this.$('[data-zone]').addEventListener('change', (e) => { this.st.zone = e.target.value; this.refresh(); });
+        this.$('[data-pattern]').addEventListener('change', (e) => { this.st.pattern = e.target.value; this.refresh(); });
+        this.$('[data-accent-off]').addEventListener('click', () => { this.st.accent = null; this.refresh(); });
+        this.$('[data-optics]').addEventListener('click', (e) => {
+          const b = e.target.closest('button');
+          if (!b) return;
+          this.st.optic = b.dataset.v;
+          this.renderTiles();
+        });
+        this.$('[data-tiles]').addEventListener('click', (e) => {
+          const b = e.target.closest('[data-id]');
+          if (!b) return;
+          const p = this.tiles.find((t) => String(t.id) === b.dataset.id);
+          if (p) this.pick(p);
+        });
+        this.$('[data-variant]').addEventListener('change', (e) => {
+          const cur = this.current();
+          if (cur) { cur.vid = +e.target.value; this.refresh(); }
+        });
+        // Aus dem Detailfenster der Inspirationsseite: Fliese in den Raum legen
+        document.addEventListener('lc:visualize', (e) => {
+          const p = this.tiles.find((t) => String(t.id) === String(e.detail && e.detail.id));
+          if (!p) return;
+          this.pick(p);
+          this.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        this.renderOptics();
+        this.refresh();
+        room3d().then((Room) => {
+          this.room = new Room(this.$('[data-3d]'));
+          this.room.showDims = false;
+          this.room.extra = { door: true, window: true };
+          this.paint();
+        }, () => { this.$('[data-3d-hint]').textContent = 'Die 3D-Vorschau ist hier nicht verfügbar – bitte den Badplaner nutzen.'; });
+      }
+      // Auswahl der gerade bearbeiteten Fläche
+      current() {
+        const s = this.st;
+        if (s.surface === 'wall') return s.same ? null : s.wall;
+        return s[s.surface];
+      }
+      pick(p) {
+        const s = this.st, sel = { p, vid: (p.vs[0] || {}).id };
+        if (s.surface === 'wall') { s.wall = sel; s.same = false; this.$('[data-same]').checked = false; } else s[s.surface] = sel;
+        this.refresh();
+      }
+      variant(sel) { return sel.p.vs.find((v) => v.id === sel.vid) || sel.p.vs[0] || { t: '' }; }
+      // Fliese im Format des Badplaners (siehe lc-configurator tile3d)
+      tile3d(sel) {
+        if (!sel) return null;
+        const v = this.variant(sel);
+        const m = String(v.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/) || String(sel.p.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/);
+        const w = m ? parseFloat(m[1].replace(',', '.')) : 60, h = m ? parseFloat(m[2].replace(',', '.')) : 60;
+        const url = [v.tx, sel.p.tx, sel.p.img].find((x) => typeof x === 'string' && x) || '';
+        const ok = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && x) : []);
+        const motifs = ok(v.mt).length ? ok(v.mt) : ok(sel.p.mt);
+        return { url, motifs, w, h, gloss: /poliert|glänzend|lappato/i.test(v.t + ' ' + sel.p.t), grout: this.st.grout || undefined };
+      }
+      scene() {
+        const s = this.st, [l, b, h] = SIZES[s.room][s.size];
+        const floor = this.tile3d(s.floor);
+        if (s.room !== 'bad') return { l, b, h, wallH: 0, wallMode: 'none', floor, wall: null, items: [], ground: s.room === 'terrasse' };
+        const wallH = s.wallMode === 'full' ? h : s.wallMode === 'half' ? 1.2 : 0.08;
+        return {
+          l, b, h, wallH, wallMode: s.wallMode,
+          accents: s.accent ? [{ key: 'akzent1', tile: this.tile3d(s.accent), zones: [s.zone], pattern: s.pattern }] : [],
+          slope: null,
+          floor, wall: this.tile3d(s.same ? s.floor : s.wall || s.floor),
+          items: BATH_ITEMS.map((x) => Object.assign({}, x)),
+        };
+      }
+      paint() { if (this.room) this.room.set(this.scene()); }
+      refresh() {
+        const s = this.st, bath = s.room === 'bad';
+        this.querySelectorAll('[data-bath-only]').forEach((b) => { b.hidden = !bath; });
+        if (!bath && s.surface !== 'floor') s.surface = 'floor';
+        this.$('[data-surface]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === s.surface));
+        this.querySelectorAll('[data-opts]').forEach((o) => { o.hidden = o.dataset.opts !== s.surface; });
+        this.$('[data-target]').textContent = s.surface === 'wall' && s.same ? 'für die Wände (aktuell wie Boden)' : SURF[s.surface];
+        this.$('[data-accent-off]').hidden = !s.accent;
+        // Farb-/Formatwahl der aktuellen Fläche
+        const cur = this.current(), vs = cur ? cur.p.vs : [];
+        this.$('[data-variant-wrap]').hidden = vs.length < 2;
+        this.$('[data-variant]').innerHTML = vs.map((v) => '<option value="' + v.id + '"' + (v.id === cur.vid ? ' selected' : '') + '>' + esc(v.t) + '</option>').join('');
+        this.renderTiles();
+        this.renderSummary();
+        this.paint();
+      }
+      renderOptics() {
+        const cats = [...new Set(this.tiles.map((t) => t.c))];
+        const box = this.$('[data-optics]');
+        box.hidden = cats.length < 2;
+        box.innerHTML = ['<button type="button" data-v="" class="is-on">Alle</button>'].concat(cats.map((c) => '<button type="button" data-v="' + esc(c) + '">' + esc(short(c)) + '</button>')).join('');
+      }
+      renderTiles() {
+        const s = this.st, cur = this.current();
+        this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === s.optic));
+        const list = this.tiles.filter((t) => !s.optic || t.c === s.optic);
+        this.$('[data-tiles]').innerHTML = list.length ? list.map((t) =>
+          '<button type="button" class="lc-vis__tile' + (cur && cur.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
+          '<img src="' + esc(t.img || '') + '" alt="" loading="lazy" width="200" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('')
+          : '<p class="lc-vis__empty">Bitte im Theme-Editor Kollektionen für den Visualizer wählen.</p>';
+      }
+      chosen() {
+        const s = this.st, out = [];
+        if (s.floor) out.push(['Boden', s.floor]);
+        if (s.room === 'bad') {
+          if (!s.same && s.wall) out.push(['Wände', s.wall]);
+          if (s.accent) out.push(['Akzentfläche', s.accent]);
+        }
+        return out;
+      }
+      renderSummary() {
+        const rows = this.chosen();
+        const s = this.st;
+        this.$('[data-sum]').innerHTML = rows.map(([k, sel]) => {
+          const v = this.variant(sel);
+          return '<li><span>' + k + '</span><a href="' + esc(sel.p.u) + '">' + esc(clean(sel.p.t)) + (sel.p.vs.length > 1 && v.t ? ' – ' + esc(v.t) : '') + '</a></li>';
+        }).join('') + (s.room === 'bad' && s.same && s.floor ? '<li><span>Wände</span><em>wie Boden</em></li>' : '');
+        const plan = this.$('[data-plan]');
+        const pl = this.dataset.planner;
+        plan.href = pl + (s.floor ? (pl.indexOf('?') > -1 ? '&' : '?') + 'lc_fliese=' + s.floor.p.id : '') + '#konfigurator-' + s.room;
+        const wa = this.$('[data-wa-link]');
+        if (wa) {
+          const txt = 'Hallo, ich habe im Fliesen-Visualizer zusammengestellt (' + { bad: 'Bad', wohnen: 'Wohnen & Küche', terrasse: 'Terrasse' }[s.room] + '):\n' +
+            rows.map(([k, sel]) => { const v = this.variant(sel); return k + ': ' + clean(sel.p.t) + (sel.p.vs.length > 1 && v.t ? ' – ' + v.t : ''); }).join('\n') +
+            (s.room === 'bad' && s.accent ? '\nMuster Akzentfläche: ' + this.$('[data-pattern]').selectedOptions[0].text : '') +
+            '\nKönnen Sie mich dazu beraten?';
+          wa.href = 'https://wa.me/' + this.dataset.wa + '?text=' + encodeURIComponent(txt);
+        }
+      }
+    });
+  }
+{% endjavascript %}
+
+{% stylesheet %}
+  .lc-vis__intro { max-width: 720px; margin: 0 0 22px; color: #4a453e; }
+  .lc-vis__layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  @media (max-width: 989px) { .lc-vis__layout { grid-template-columns: 1fr; } }
+  .lc-vis__view { position: sticky; top: 16px; }
+  @media (max-width: 989px) { .lc-vis__view { position: static; } }
+  .lc-vis__3d { border: 1px solid #e4dccf; background: #f3efe8; }
+  .lc-vis__stage { position: relative; height: clamp(300px, 46vw, 520px); touch-action: pan-y; cursor: grab; }
+  .lc-vis__stage:active { cursor: grabbing; }
+  .lc-vis__stage canvas { display: block; width: 100%; height: 100%; }
+  .lc-vis__hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(17,17,17,.75); color: #fff; font-size: 12px; letter-spacing: .08em; padding: 6px 12px; pointer-events: none; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
+  .lc-vis__bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: #fff; border-top: 1px solid #e4dccf; }
+  .lc-vis__bar button { border: 1px solid #d8cfc0; background: #fff; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #1c1b19; font-family: inherit; min-width: 34px; }
+  .lc-vis__bar button:hover { border-color: #111; }
+  .lc-vis__sum { list-style: none; margin: 14px 0 0; padding: 0; font-size: 14px; }
+  .lc-vis__sum li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid #eee6da; }
+  .lc-vis__sum span { min-width: 110px; color: #8a6a3a; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; padding-top: 2px; }
+  .lc-vis__sum a { color: inherit; }
+  .lc-vis__actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
+  .lc-vis__note { font-size: 12px; color: #6f675c; margin: 0; }
+  .lc-vis__panel { display: grid; gap: 22px; }
+  .lc-vis__group { display: grid; gap: 10px; }
+  .lc-vis__label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; }
+  .lc-vis__label em { font-style: normal; text-transform: none; letter-spacing: 0; color: #6f675c; font-weight: 400; margin-left: 4px; }
+  .lc-vis__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lc-vis__chips button, .lc-vis__grout button { border: 1px solid #d8cfc0; background: #fff; padding: 8px 14px; font-size: 14px; cursor: pointer; color: #1c1b19; font-family: inherit; }
+  .lc-vis__chips--small button { padding: 5px 10px; font-size: 12px; }
+  .lc-vis__chips button.is-on { background: #111; color: #fff; border-color: #111; }
+  .lc-vis__chips button[hidden] { display: none; }
+  .lc-vis__opts { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-size: 13px; }
+  .lc-vis__opts[hidden] { display: none; }
+  .lc-vis__opts label { display: grid; gap: 4px; }
+  .lc-vis__opts select, .lc-vis__variant select { padding: 6px 8px; border: 1px solid #d8cfc0; background: #fff; font: inherit; font-size: 13px; }
+  .lc-vis__opts .lc-vis__check { display: flex; align-items: center; gap: 6px; }
+  .lc-vis__link { border: 0; background: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; font-size: 13px; color: #6f675c; }
+  .lc-vis__link[hidden] { display: none; }
+  .lc-vis__grout { display: flex; gap: 6px; align-items: center; }
+  .lc-vis__grout button { width: 30px; height: 30px; padding: 0; background: var(--c, #fff); font-size: 11px; }
+  .lc-vis__grout button[data-v=""] { width: auto; padding: 0 8px; }
+  .lc-vis__grout button.is-on { outline: 2px solid #b8955a; outline-offset: 2px; }
+  .lc-vis__tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-height: 420px; overflow-y: auto; padding: 2px; }
+  .lc-vis__tile { display: grid; gap: 4px; border: 1px solid #e4dccf; background: #fff; padding: 4px; cursor: pointer; text-align: left; font: inherit; font-size: 11px; line-height: 1.25; color: #1c1b19; }
+  .lc-vis__tile img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #f3efe8; }
+  .lc-vis__tile span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .lc-vis__tile.is-on { border-color: #111; box-shadow: 0 0 0 1px #111; }
+  .lc-vis__variant { display: grid; gap: 4px; font-size: 13px; }
+  .lc-vis__variant[hidden] { display: none; }
+  .lc-vis__empty { font-size: 13px; color: #6f675c; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Fliesen-Visualizer",
+  "settings": [
+    { "type": "text", "id": "title", "label": "Überschrift", "default": "Fliesen-Visualizer" },
+    { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Raum wählen, Fläche anklicken, Fliese aussuchen – und sofort in 3D sehen, wie es wirkt." },
+    { "type": "text", "id": "whatsapp", "label": "WhatsApp-Nummer (international, z. B. 4917662596394)" },
+    { "type": "text", "id": "planner_url", "label": "Seite mit dem Badplaner", "default": "/" },
+    { "type": "header", "content": "Fliesen zur Auswahl", "info": "Jede Kollektion erscheint als Optik-Filter (z. B. Holzoptik, Marmoroptik)." },
+    { "type": "collection", "id": "col_1", "label": "Kollektion 1" },
+    { "type": "collection", "id": "col_2", "label": "Kollektion 2" },
+    { "type": "collection", "id": "col_3", "label": "Kollektion 3" },
+    { "type": "collection", "id": "col_4", "label": "Kollektion 4" },
+    { "type": "collection", "id": "col_5", "label": "Kollektion 5" },
+    { "type": "collection", "id": "col_6", "label": "Kollektion 6" },
+    { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 4, "max": 40, "step": 1, "default": 24 },
+    { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 32 },
+    { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 40 }
+  ],
+  "presets": [{ "name": "Fliesen-Visualizer" }]
+}
+{% endschema %}
