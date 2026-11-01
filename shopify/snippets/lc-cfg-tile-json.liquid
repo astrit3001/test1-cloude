@@ -6,7 +6,7 @@
   3. zweites Produktbild (erstes ist meist ein Raumfoto)
 {%- endcomment -%}
 {%- liquid
-  assign tx = blank
+  assign tx = ''
   if p.metafields.custom.textur_3d != blank
     assign tx = p.metafields.custom.textur_3d.value | image_url: width: 1024
   else
@@ -16,11 +16,11 @@
         break
       endif
     endfor
-    if tx == blank and p.images.size > 1
+    if tx == '' and p.images.size > 1
       assign tx = p.images[1] | image_url: width: 1024
     endif
   endif
 -%}
-{"id":{{ p.id }},"c":{{ c | json }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"tx":{% if tx != blank %}{{ tx | json }}{% else %}null{% endif %},"vs":[
+{"id":{{ p.id }},"c":{{ c | json }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"tx":{% if tx != '' %}{{ tx | json }}{% else %}null{% endif %},"vs":[
   {%- for v in p.variants limit: 30 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}{% if v.image %}{% unless v.image.src contains 'anwendung' %},"tx":{{ v.image | image_url: width: 1024 | json }}{% endunless %}{% endif %}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
 ]}

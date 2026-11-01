@@ -10,27 +10,21 @@
     <lc-configurator class="lc-cfg" data-wa="{{ wa }}" data-lay-min="{{ s.lay_min }}" data-lay-max="{{ s.lay_max }}" data-xxl-min="{{ s.xxl_min }}" data-xxl-max="{{ s.xxl_max }}" data-lay-bath="{{ s.lay_bath | default: 200 }}" data-bath-from="{{ s.bath_from }}" data-spread="{{ s.spread | default: 15 }}">
       <script type="text/plain" data-options>{{ s.options }}
 {{ s.options_extra }}</script>
-      <script type="application/json" data-tiles>
-        [
-        {%- assign first = true -%}
-        {%- for i in (1..5) -%}
-          {%- assign key = 'col_tiles_' | append: i -%}
-          {%- assign col = s[key] -%}
-          {%- if col != blank -%}
-            {%- for p in col.products limit: s.per_collection -%}
-              {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
-              {%- render 'lc-cfg-tile-json', p: p, c: col.title -%}
-            {%- endfor -%}
-          {%- endif -%}
-        {%- endfor -%}
-        {%- if s.col_outdoor != blank -%}
-          {%- for p in s.col_outdoor.products limit: s.per_collection -%}
-            {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
-            {%- render 'lc-cfg-tile-json', p: p, c: 'Outdoor' -%}
+      {%- comment -%} Jede Fliese in einem eigenen Block: ein fehlerhaftes Produkt legt nicht die ganze Auswahl lahm {%- endcomment -%}
+      {%- for i in (1..5) -%}
+        {%- assign key = 'col_tiles_' | append: i -%}
+        {%- assign col = s[key] -%}
+        {%- if col != blank -%}
+          {%- for p in col.products limit: s.per_collection -%}
+            <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: col.title -%}</script>
           {%- endfor -%}
         {%- endif -%}
-        ]
-      </script>
+      {%- endfor -%}
+      {%- if s.col_outdoor != blank -%}
+        {%- for p in s.col_outdoor.products limit: s.per_collection -%}
+          <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: 'Outdoor' -%}</script>
+        {%- endfor -%}
+      {%- endif -%}
       <script type="application/json" data-sanitary>
         [
         {%- if s.col_sanitary != blank -%}
@@ -1360,7 +1354,11 @@
     customElements.define('lc-configurator', class extends HTMLElement {
       connectedCallback() {
         this.$ = (q) => this.querySelector(q);
-        this.tiles = this.readJSON('[data-tiles]');
+        this.tileErrors = [];
+        this.tiles = [...this.querySelectorAll('[data-tile-json]')].map((el) => {
+          try { return JSON.parse(el.textContent); } catch (e) { this.tileErrors.push(el.textContent.trim().slice(0, 160)); return null; }
+        }).filter(Boolean);
+        if (this.tileErrors.length) console.warn('Konfigurator: ' + this.tileErrors.length + ' Fliesen mit fehlerhaften Daten übersprungen', this.tileErrors);
         const seen = {};
         this.tiles = this.tiles.filter((p) => (seen[p.id] ? false : (seen[p.id] = true)));
         this.sanitary = this.readJSON('[data-sanitary]');
@@ -1627,7 +1625,8 @@
         const v = this.variant(sel);
         const m = String(v.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/) || String(sel.p.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/);
         const w = m ? parseFloat(m[1].replace(',', '.')) : 60, h = m ? parseFloat(m[2].replace(',', '.')) : 60;
-        return { url: v.tx || sel.p.tx || sel.p.img || '', w, h, gloss: /poliert|glänzend|lappato/i.test(v.t + ' ' + sel.p.t) };
+        const url = [v.tx, sel.p.tx, sel.p.img].find((x) => typeof x === 'string' && x) || '';
+        return { url, w, h, gloss: /poliert|glänzend|lappato/i.test(v.t + ' ' + sel.p.t) };
       }
       scene3d() {
         const floor = this.tile3d(this.sel.boden);
@@ -1740,7 +1739,7 @@
             '<span class="lc-cfg__prod-img">' + (p.img ? '<img loading="lazy" src="' + p.img + '" alt="">' : '') + '</span>' +
             '<span class="lc-cfg__prod-v">' + esc(p.v) + '</span><span class="lc-cfg__prod-t">' + esc(clean(p.t)) + '</span>' +
             '<span class="lc-cfg__prod-p">' + (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) + (area ? '/m²' : '/Stk') + '</span></button>';
-        }).join('') || '<p class="lc-cfg__sub">Keine Produkte in dieser Kategorie.</p>';
+        }).join('') || '<p class="lc-cfg__sub">Keine Produkte in dieser Kategorie.' + (!this.tiles.length && this.tileErrors.length ? ' (Fliesendaten fehlerhaft: ' + esc(this.tileErrors[0]) + ')' : '') + '</p>';
         grid.querySelectorAll('[data-tile]').forEach((b) => b.addEventListener('click', () => {
           const p = this.tiles.find((x) => x.id === parseInt(b.dataset.tile, 10));
           const v = p.vs.find((vv) => vv.ok) || p.vs[0];
