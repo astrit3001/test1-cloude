@@ -18,18 +18,14 @@
           {%- if col != blank -%}
             {%- for p in col.products limit: s.per_collection -%}
               {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
-              {"id":{{ p.id }},"c":{{ col.title | json }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"vs":[
-                {%- for v in p.variants limit: 30 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
-              ]}
+              {%- render 'lc-cfg-tile-json', p: p, c: col.title -%}
             {%- endfor -%}
           {%- endif -%}
         {%- endfor -%}
         {%- if s.col_outdoor != blank -%}
           {%- for p in s.col_outdoor.products limit: s.per_collection -%}
             {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
-            {"id":{{ p.id }},"c":"Outdoor","t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"vs":[
-              {%- for v in p.variants limit: 30 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
-            ]}
+            {%- render 'lc-cfg-tile-json', p: p, c: 'Outdoor' -%}
           {%- endfor -%}
         {%- endif -%}
         ]
@@ -49,6 +45,22 @@
       </script>
 
       <ol class="lc-cfg__progress" data-progress></ol>
+
+      {%- if s.show_3d -%}
+        <div class="lc-cfg__3d" data-3d hidden>
+          <div class="lc-cfg__3d-stage" data-3d-stage>
+            <span class="lc-cfg__3d-hint" data-3d-hint>3D-Vorschau wird geladen …</span>
+          </div>
+          <div class="lc-cfg__3d-bar">
+            <span class="lc-cfg__3d-title">3D-Vorschau Ihres Raums</span>
+            <button type="button" data-3d-zoom="1" aria-label="Näher heran">+</button>
+            <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
+            <button type="button" data-3d-reset>Ansicht zurücksetzen</button>
+            <button type="button" data-3d-save>Als Bild speichern</button>
+          </div>
+          <p class="lc-cfg__3d-note">Vereinfachte Darstellung nach Ihren Maßen und im echten Fliesenformat. Farbe und Struktur können je nach Bildschirm abweichen, Sanitärobjekte sind symbolisch – Muster sehen Sie in unserer Ausstellung.</p>
+        </div>
+      {%- endif -%}
 
       <div class="lc-cfg__step is-active" data-step="projekt">
         <h3>Was planen Sie?</h3>
@@ -196,6 +208,231 @@
     const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör' };
     const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
     const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche' };
+    const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
+    let threeLoad = null;
+
+    // 3D-Raum (Puppenhaus-Ansicht): Wände zeigen nach innen und werden von außen ausgeblendet,
+    // Fliesen werden als 2×2-Block (gespiegelt, gegen sichtbare Wiederholung) im echten Format gekachelt.
+    class LcRoom3D {
+      constructor(box) {
+        this.box = box;
+        this.stage = box.querySelector('[data-3d-stage]');
+        this.hint = box.querySelector('[data-3d-hint]');
+        this.tex = {};
+        this.key = '';
+        this.view = { theta: -0.65, phi: 1.0, zoom: 1 };
+        box.querySelectorAll('[data-3d-zoom]').forEach((b) => b.addEventListener('click', () => { this.view.zoom = Math.min(2.2, Math.max(0.6, this.view.zoom * (b.getAttribute('data-3d-zoom') === '1' ? 1.2 : 1 / 1.2))); this.render(); }));
+        box.querySelector('[data-3d-reset]').addEventListener('click', () => { this.view = { theta: -0.65, phi: 1.0, zoom: 1 }; this.render(); });
+        box.querySelector('[data-3d-save]').addEventListener('click', () => this.save());
+      }
+      init() {
+        if (this.ready) return this.ready;
+        this.ready = (threeLoad = threeLoad || import(THREE_URL)).then((T) => {
+          this.T = T;
+          const r = this.renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+          r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          r.outputColorSpace = T.SRGBColorSpace;
+          r.toneMapping = T.ACESFilmicToneMapping;
+          r.toneMappingExposure = 1.05;
+          this.stage.appendChild(r.domElement);
+          this.scene = new T.Scene();
+          this.scene.background = new T.Color(0xf3efe8);
+          this.scene.add(new T.HemisphereLight(0xffffff, 0xb9b1a4, 1.6));
+          const sun = new T.DirectionalLight(0xffffff, 1.6);
+          sun.position.set(-3, 6, 5);
+          this.scene.add(sun);
+          this.camera = new T.PerspectiveCamera(42, 1, 0.05, 100);
+          this.bindPointer(r.domElement);
+          new ResizeObserver(() => this.render()).observe(this.stage);
+          this.hint.textContent = 'Ziehen zum Drehen';
+        }).catch(() => {
+          this.hint.textContent = '3D-Vorschau ist in diesem Browser leider nicht verfügbar.';
+          throw new Error('3d');
+        });
+        return this.ready;
+      }
+      bindPointer(el) {
+        let last = null;
+        el.addEventListener('pointerdown', (e) => { last = e; el.setPointerCapture(e.pointerId); this.hint.hidden = true; });
+        el.addEventListener('pointermove', (e) => {
+          if (!last) return;
+          this.view.theta -= (e.clientX - last.clientX) * 0.008;
+          // Am Handy nur seitlich drehen, damit die Seite weiter scrollbar bleibt
+          if (e.pointerType === 'mouse') this.view.phi = Math.min(1.45, Math.max(0.25, this.view.phi - (e.clientY - last.clientY) * 0.006));
+          last = e;
+          this.render();
+        });
+        const up = () => { last = null; };
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+        el.addEventListener('wheel', (e) => { e.preventDefault(); this.view.zoom = Math.min(2.2, Math.max(0.6, this.view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); this.render(); }, { passive: false });
+      }
+      set(state) {
+        const key = JSON.stringify(state);
+        if (key === this.key) return;
+        this.key = key;
+        this.init().then(() => { this.build(state); this.render(); }, () => {});
+      }
+      texture(t) {
+        const id = t ? t.url + '|' + t.w + '|' + t.h : 'none';
+        if (this.tex[id]) return this.tex[id];
+        const T = this.T;
+        const tw = t ? Math.max(t.w, t.h) : 60, th = t ? Math.min(t.w, t.h) : 60;
+        const px = 512 / tw;
+        const W = Math.round(tw * px), H = Math.round(th * px);
+        const cv = document.createElement('canvas');
+        cv.width = W * 2; cv.height = H * 2;
+        const ctx = cv.getContext('2d');
+        const grout = Math.max(1.5, 0.3 * px);
+        const draw = (img) => {
+          let lum = 0.85;
+          ctx.fillStyle = '#ddd8d0';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+          if (img) {
+            // Mittlere Helligkeit des Fliesenbilds: helle Fliese -> dunklere Fuge und umgekehrt
+            ctx.drawImage(img, 0, 0, 1, 1);
+            const px1 = ctx.getImageData(0, 0, 1, 1).data;
+            lum = (0.3 * px1[0] + 0.59 * px1[1] + 0.11 * px1[2]) / 255;
+            const ia = img.width / img.height, ta = W / H;
+            const sw = ia > ta ? img.height * ta : img.width, sh = ia > ta ? img.height : img.width / ta;
+            const sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
+            for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+              ctx.save();
+              ctx.translate(i * W + (i ? W : 0), j * H + (j ? H : 0));
+              ctx.scale(i ? -1 : 1, j ? -1 : 1);
+              ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+              ctx.restore();
+            }
+          }
+          ctx.fillStyle = lum > 0.62 ? 'rgba(150,143,133,.85)' : lum > 0.35 ? 'rgba(222,218,210,.9)' : 'rgba(120,116,110,.9)';
+          [0, W].forEach((x) => ctx.fillRect(x, 0, grout, cv.height));
+          [0, H].forEach((y) => ctx.fillRect(0, y, cv.width, grout));
+        };
+        draw(null);
+        const tex = new T.CanvasTexture(cv);
+        tex.wrapS = tex.wrapT = T.RepeatWrapping;
+        tex.colorSpace = T.SRGBColorSpace;
+        tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        const out = this.tex[id] = { tex, bw: (tw * 2) / 100, bh: (th * 2) / 100 };
+        if (t && t.url) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => { draw(img); tex.needsUpdate = true; this.render(); };
+          img.src = t.url.indexOf('//') === 0 ? 'https:' + t.url : t.url;
+        }
+        return out;
+      }
+      build(s) {
+        const T = this.T;
+        if (this.room) {
+          this.scene.remove(this.room);
+          this.room.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && !o.material.userData.keep) o.material.dispose(); });
+        }
+        const g = this.room = new T.Group();
+        this.size = s;
+        const mat = (o) => new T.MeshStandardMaterial(o);
+        const paint = mat({ color: 0xf2efea, roughness: 0.95 });
+        const tiled = (t, w, h, tex) => {
+          const geo = new T.PlaneGeometry(w, h);
+          const uv = geo.attributes.uv;
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w) / tex.bw, (uv.getY(i) * h) / tex.bh);
+          return new T.Mesh(geo, mat({ map: tex.tex, roughness: t && t.gloss ? 0.18 : 0.55 }));
+        };
+        const ft = this.texture(s.floor);
+        const floor = tiled(s.floor, s.l, s.b, ft);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.set(s.l / 2, 0, s.b / 2);
+        g.add(floor);
+        if (s.ground) {
+          const gr = new T.Mesh(new T.PlaneGeometry(s.l * 4, s.b * 4), mat({ color: 0x9aa97f, roughness: 1 }));
+          gr.rotation.x = -Math.PI / 2;
+          gr.position.set(s.l / 2, -0.02, s.b / 2);
+          g.add(gr);
+        }
+        if (s.h) {
+          const wt = s.wallH ? this.texture(s.wall || s.floor) : null;
+          // [Länge, x, z, Drehung]: Normale jeder Wand zeigt in den Raum
+          [[s.l, s.l / 2, 0, 0], [s.l, s.l / 2, s.b, Math.PI], [s.b, 0, s.b / 2, Math.PI / 2], [s.b, s.l, s.b / 2, -Math.PI / 2]].forEach(([w, x, z, ry]) => {
+            const add = (m, y0, y1) => { m.position.set(x, (y0 + y1) / 2, z); m.rotation.y = ry; g.add(m); };
+            if (s.wallH) add(tiled(s.wall || s.floor, w, s.wallH, wt), 0, s.wallH);
+            if (s.h > s.wallH) add(new T.Mesh(new T.PlaneGeometry(w, s.h - s.wallH), paint), s.wallH, s.h);
+          });
+        }
+        if (s.fix) this.fixtures(g, s);
+        this.scene.add(g);
+      }
+      fixtures(g, s) {
+        const T = this.T;
+        const m = (o) => new T.MeshStandardMaterial(o);
+        const ceramic = m({ color: 0xfafaf8, roughness: 0.12 });
+        const chrome = m({ color: 0xd4d6d8, metalness: 0.6, roughness: 0.25 });
+        const wood = m({ color: 0x6f5a45, roughness: 0.6 });
+        const glass = m({ color: 0xd6ecf0, transparent: true, opacity: 0.22, roughness: 0, side: T.DoubleSide, depthWrite: false });
+        const box = (w, h, d, mt, x, y, z) => { const o = new T.Mesh(new T.BoxGeometry(w, h, d), mt); o.position.set(x, y, z); g.add(o); return o; };
+        const f = s.fix;
+        // Dusche in der hinteren rechten Ecke
+        const sw = Math.min(f.showerW, s.l - 0.5), sd = Math.min(f.showerD, s.b - 0.4);
+        if (sw > 0.6 && sd > 0.6) {
+          if (f.tray) box(sw, 0.04, sd, ceramic, s.l - sw / 2, 0.02, sd / 2);
+          box(0.008, Math.min(2, s.h - 0.05), sd, glass, s.l - sw, Math.min(2, s.h - 0.05) / 2, sd / 2);
+          const head = new T.Mesh(new T.CylinderGeometry(0.15, 0.15, 0.015, 32), chrome);
+          head.position.set(s.l - sw / 2, Math.min(2.15, s.h - 0.1), Math.min(0.35, sd / 2));
+          g.add(head);
+          box(0.02, 0.02, Math.min(0.35, sd / 2), chrome, s.l - sw / 2, Math.min(2.16, s.h - 0.09), Math.min(0.35, sd / 2) / 2);
+        }
+        // WC an der Rückwand links der Dusche
+        const wcX = Math.max(0.45, s.l - sw - 0.55);
+        if (s.l - sw > 0.75) {
+          if (f.wcWall) box(0.37, 0.2, 0.54, ceramic, wcX, 0.32, 0.27);
+          else { box(0.37, 0.2, 0.62, ceramic, wcX, 0.32, 0.31); box(0.22, 0.24, 0.3, ceramic, wcX, 0.12, 0.3); box(0.42, 0.38, 0.18, ceramic, wcX, 0.65, 0.09); }
+          box(0.38, 0.025, 0.5, ceramic, wcX, 0.435, 0.27);
+          if (f.wcWall) box(0.25, 0.16, 0.01, chrome, wcX, 1.05, 0.005);
+        }
+        // Badewanne an der vorderen Wand
+        let freeB = s.b;
+        if (f.tub && s.b - sd > 1.0) {
+          const tl = Math.min(1.7, s.l - 0.1), off = f.freeTub ? 0.15 : 0;
+          box(tl - off * 2, 0.58, 0.75, ceramic, tl / 2 + 0.05, 0.29, s.b - 0.375 - off);
+          box(tl - off * 2 - 0.12, 0.02, 0.63, m({ color: 0xe6eef0, roughness: 0.05 }), tl / 2 + 0.05, 0.585, s.b - 0.375 - off);
+          freeB = s.b - 0.8;
+        }
+        // Waschtisch mit Spiegel an der linken Wand
+        const z0 = 0.75;
+        const vw = f.double && freeB - z0 >= 1.5 ? 1.4 : 0.8;
+        if (freeB - z0 >= vw + 0.1) {
+          const zc = z0 + vw / 2;
+          box(0.46, 0.45, vw, wood, 0.23, 0.55, zc);
+          box(0.48, 0.05, vw + 0.02, ceramic, 0.24, 0.8, zc);
+          (vw > 1 ? [zc - 0.35, zc + 0.35] : [zc]).forEach((z) => box(0.03, 0.2, 0.03, chrome, 0.06, 0.92, z));
+          const mirror = new T.Mesh(new T.PlaneGeometry(vw, 0.75), m({ color: 0xc9d3d8, metalness: 0.4, roughness: 0.05 }));
+          mirror.rotation.y = Math.PI / 2;
+          mirror.position.set(0.01, 1.5, zc);
+          g.add(mirror);
+        }
+      }
+      render() {
+        if (!this.renderer || !this.size) return;
+        const w = this.stage.clientWidth, h = this.stage.clientHeight;
+        if (!w || !h) return;
+        const r = this.renderer;
+        if (r.domElement.width !== Math.round(w * r.getPixelRatio()) || r.domElement.height !== Math.round(h * r.getPixelRatio())) r.setSize(w, h, false);
+        const s = this.size, v = this.view;
+        const d = Math.hypot(s.l, s.b, s.h || 1) * 1.2 / v.zoom;
+        const tx = s.l / 2, ty = (s.h || 0.5) * 0.42, tz = s.b / 2;
+        this.camera.aspect = w / h;
+        this.camera.position.set(tx + d * Math.sin(v.phi) * Math.sin(v.theta), ty + d * Math.cos(v.phi), tz + d * Math.sin(v.phi) * Math.cos(v.theta));
+        this.camera.lookAt(tx, ty, tz);
+        this.camera.updateProjectionMatrix();
+        r.render(this.scene, this.camera);
+      }
+      save() {
+        if (!this.renderer) return;
+        this.render();
+        const a = document.createElement('a');
+        a.download = 'lunaceram-3d-vorschau.png';
+        try { a.href = this.renderer.domElement.toDataURL('image/png'); a.click(); } catch (e) { alert('Das Bild konnte nicht gespeichert werden.'); }
+      }
+    }
 
     customElements.define('lc-configurator', class extends HTMLElement {
       connectedCallback() {
@@ -215,6 +452,7 @@
         this.maxIdx = 0;
         this.next = this.$('[data-next]');
         this.back = this.$('[data-back]');
+        this.room3d = this.$('[data-3d]') ? new LcRoom3D(this.$('[data-3d]')) : null;
         this.addEventListener('change', (e) => {
           if (e.target.name === 'lc-projekt') this.onProject();
           if (e.target.dataset.opt !== undefined) this.onOption(e.target);
@@ -416,6 +654,49 @@
         if (this.flow[this.idx] === 'sanitaer') this.next.textContent = Object.keys(this.sel.san).length ? 'Weiter' : 'Überspringen';
         else this.next.textContent = 'Weiter';
         this.renderSlots();
+        this.sync3d();
+      }
+      sync3d() {
+        if (!this.room3d) return;
+        const show = !!this.project() && this.flow[this.idx] !== 'projekt' && this.areas().floor > 0;
+        this.room3d.box.hidden = !show;
+        if (show) this.room3d.set(this.scene3d());
+      }
+      labels(prefix) {
+        const g = this.opts.find((x) => x.name.indexOf(prefix) === 0);
+        return g ? (this.choice[g.name] || []).map((id) => (g.items.find((i) => i.id === id) || {}).label || '') : [];
+      }
+      tile3d(sel) {
+        if (!sel) return null;
+        const v = this.variant(sel);
+        const m = String(v.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/) || String(sel.p.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/);
+        const w = m ? parseFloat(m[1].replace(',', '.')) : 60, h = m ? parseFloat(m[2].replace(',', '.')) : 60;
+        return { url: v.tx || sel.p.tx || sel.p.img || '', w, h, gloss: /poliert|glänzend|lappato/i.test(v.t + ' ' + sel.p.t) };
+      }
+      scene3d() {
+        const floor = this.tile3d(this.sel.boden);
+        if (this.isBath()) {
+          const l = this.num('[data-m="l"]'), b = this.num('[data-m="b"]'), h = this.num('[data-m="h"]') || 2.5;
+          const mode = this.$('[data-m="wall"]').value;
+          const size = (this.labels('Duschgröße')[0] || '').match(/(\d+)\s*×\s*(\d+)/);
+          const tub = this.labels('Badewanne')[0] || (Object.values(this.sel.san).some((x) => this.sanCat(x.p) === 'Badewannen') ? 'Badewanne' : '');
+          return {
+            l, b, h,
+            wallH: mode === 'full' ? h : mode === 'half' ? 1.2 : 0,
+            floor, wall: this.tile3d(this.sel.wand),
+            fix: {
+              wcWall: !this.labels('WC').some((t) => /Stand/.test(t)),
+              tray: this.labels('Dusche').some((t) => /Duschwanne/.test(t)),
+              showerW: size ? +size[1] / 100 : 0.9, showerD: size ? +size[2] / 100 : 0.9,
+              tub: !!tub, freeTub: /Freistehend/.test(tub),
+              double: this.labels('Waschplatz').some((t) => /Doppel/.test(t)),
+            },
+          };
+        }
+        const a = this.areas().floor;
+        const terr = this.project() === 'terrasse';
+        const l = Math.sqrt(a * (terr ? 1.6 : 1.4));
+        return { l, b: a / l, h: terr ? 0 : 2.6, wallH: 0, floor, wall: null, fix: null, ground: terr };
       }
       go(n, force) {
         if (n < 0 || n >= this.flow.length) return;
@@ -711,6 +992,17 @@
   .lc-cfg__estimate small { color: #6f675c; font-size: 13px; }
   .lc-cfg__live small { font-weight: 400; color: #8a6a3a; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; margin-right: 4px; }
   .lc-cfg__table--sv td:last-child { white-space: nowrap; }
+  .lc-cfg__3d { margin: 0 0 22px; border: 1px solid #e4dccf; background: #f3efe8; }
+  .lc-cfg__3d[hidden] { display: none; }
+  .lc-cfg__3d-stage { position: relative; height: clamp(280px, 42vw, 440px); touch-action: pan-y; cursor: grab; }
+  .lc-cfg__3d-stage:active { cursor: grabbing; }
+  .lc-cfg__3d-stage canvas { display: block; width: 100%; height: 100%; }
+  .lc-cfg__3d-hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(17,17,17,.75); color: #fff; font-size: 12px; letter-spacing: .08em; padding: 6px 12px; pointer-events: none; white-space: nowrap; }
+  .lc-cfg__3d-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; background: #fff; border-top: 1px solid #e4dccf; }
+  .lc-cfg__3d-title { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; margin-right: auto; }
+  .lc-cfg__3d-bar button { border: 1px solid #d8cfc0; background: #fff; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #1c1b19; font-family: inherit; min-width: 34px; }
+  .lc-cfg__3d-bar button:hover { border-color: #111; }
+  .lc-cfg__3d-note { margin: 0; padding: 0 10px 10px; background: #fff; font-size: 12px; color: #6f675c; }
   @media (max-width: 600px) {
     .lc-cfg__progress li { font-size: 9px; letter-spacing: .04em; }
     .lc-cfg__facts div { grid-template-columns: 1fr; gap: 2px; }
@@ -732,6 +1024,7 @@
     { "type": "url", "id": "privacy_url", "label": "Link Datenschutzerklärung" },
     { "type": "number", "id": "bath_from", "label": "Komplettbad ab (€) – derzeit nicht verwendet", "default": 20000 },
     { "type": "number", "id": "spread", "label": "Spielraum der Gesamtschätzung (%)", "default": 15 },
+    { "type": "checkbox", "id": "show_3d", "label": "3D-Vorschau des Raums anzeigen", "info": "Fliesenoberfläche: Metafeld custom.textur_3d (Bild) am Produkt, sonst Produktbild mit „farbe“ im Dateinamen.", "default": true },
     { "type": "header", "content": "Verlegepreise (Schätzung)" },
     { "type": "number", "id": "lay_min", "label": "Verlegung €/m² von (nur Info)", "default": 40 },
     { "type": "number", "id": "lay_max", "label": "Verlegung Wohnen/Terrasse €/m² (wird gerechnet)", "default": 70 },
