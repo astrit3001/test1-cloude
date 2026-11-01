@@ -30,8 +30,36 @@
         {%- if s.col_sanitary != blank -%}
           {%- paginate s.col_sanitary.products by 100 -%}
           {%- for p in s.col_sanitary.products -%}
-            {"id":{{ p.id }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"tags":{{ p.tags | json }},"pt":{{ p.type | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"vs":[
-              {%- for v in p.variants limit: 20 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"ok":{{ v.available }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
+            {%- liquid
+              # 3D-Modell: Metafeld custom.modell_3d (Datei .glb) oder 3D-Modell in den Produktmedien
+              assign m3d = ''
+              assign mf = p.metafields.custom.modell_3d.value
+              if mf != blank
+                if mf.media_type == 'model'
+                  for src in mf.sources
+                    if src.format == 'glb'
+                      assign m3d = src.url
+                    endif
+                  endfor
+                elsif mf.url != blank
+                  assign m3d = mf.url
+                endif
+              endif
+              if m3d == ''
+                for md in p.media
+                  if md.media_type == 'model'
+                    for src in md.sources
+                      if src.format == 'glb'
+                        assign m3d = src.url
+                      endif
+                    endfor
+                    break
+                  endif
+                endfor
+              endif
+            -%}
+            {"id":{{ p.id }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"tags":{{ p.tags | json }},"pt":{{ p.type | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"m3d":{{ m3d | json }},"vs":[
+              {%- for v in p.variants limit: 20 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"ok":{{ v.available }}{% if v.image %},"img":{{ v.image | image_url: width: 400 | json }}{% endif %}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
             ]}{%- unless forloop.last -%},{%- endunless -%}
           {%- endfor -%}
           {%- endpaginate -%}
@@ -52,6 +80,7 @@
             <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
             <button type="button" class="lc-cfg__3d-mode" data-3d-mode>2D-Grundriss</button>
             <button type="button" data-3d-dims aria-pressed="true">Maße</button>
+            <button type="button" data-3d-cards aria-pressed="true">Produktfotos</button>
             <button type="button" data-3d-zones aria-pressed="false">Schutzbereiche</button>
             <button type="button" data-3d-move aria-pressed="false">Objekte verschieben</button>
             <button type="button" data-3d-save>Als Bild speichern</button>
@@ -227,6 +256,22 @@
     const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
     const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche', m2_rest: '/m² Wand ohne Fliesen', m2_decke: '/m² Decke' };
     const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
+    // Nur geladen, wenn ein Sanitärprodukt ein 3D-Modell hat
+    const GLTF_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js/+esm';
+    let gltfLoad = null;
+    // Farbe/Oberfläche aus Produkt- und Variantenname (spanische Herstellerbezeichnungen inklusive)
+    const prodColor = (t) => {
+      const c = [
+        [/kupfer|copper|cobre|rouge|terracotta|terra|cotta|teja/i, 0xa8644a], [/altgold|gold|oro/i, 0xc8a04e], [/silber|silver|plata|chrom|edelstahl|inox|titan/i, 0xc9ccce],
+        [/gun ?metal|lead|steel art/i, 0x5b5d60], [/cobalt|steel blue|blau|azul|blue/i, 0x3f5f86], [/sage|olivine|grün|verde|green|oliv/i, 0x8d9a7a],
+        [/schwarz|negro|black|nero|night/i, 0x2b2a29], [/anthrazit|antracita|anthracite|graphit|grafito/i, 0x47484b],
+        [/taupe|vis[oó]n|moka|mocha|tortora|emperador/i, 0x8f8172], [/beige|arena|sand|crema|cream|marfil|hueso|bone|botticino|natural/i, 0xd8cbb5],
+        [/light grey|perla|pearl/i, 0xc4c3bf], [/grau|gris|grey|gray|grigio|cemento|cement|slate|pizarra/i, 0x8c8a87],
+        [/eiche|roble|holz|nuss|nogal|walnut|teak|oak|wood/i, 0x8a6a48],
+        [/weiß|weiss|blanco|blanca|white|bianco|statuario|marble|velvet|amani|carrara/i, 0xf7f6f3],
+      ].find((e) => e[0].test(t));
+      return c ? c[1] : null;
+    };
     let threeLoad = null;
 
     // 3D-Raum (Puppenhaus-Ansicht): Wände zeigen nach innen und werden von außen ausgeblendet,
@@ -330,6 +375,13 @@
           if (this.state && this.T) { this.build(this.state); this.render(); }
           if (this.onLayout) this.onLayout();
         }));
+        this.showCards = true;
+        const cardsBtn = box.querySelector('[data-3d-cards]');
+        cardsBtn.addEventListener('click', () => {
+          this.showCards = !this.showCards;
+          cardsBtn.setAttribute('aria-pressed', this.showCards);
+          this.render();
+        });
         const dimsBtn = box.querySelector('[data-3d-dims]');
         dimsBtn.addEventListener('click', () => {
           this.showDims = !this.showDims;
@@ -594,7 +646,7 @@
         const T = this.T;
         if (this.room) {
           this.scene.remove(this.room);
-          this.room.traverse((o) => { if (o.isSprite) o.material.map.dispose(); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+          this.room.traverse((o) => { if (o.isSprite && o.material.map && !o.userData.keep) o.material.map.dispose(); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
         }
         const g = this.room = new T.Group();
         this.size = s;
@@ -663,6 +715,7 @@
           }
           o.add(fp);
           o.userData.fp = fp;
+          if (o.userData.prod) this.decorate(o);
           this.put(o);
           g.add(o);
           this.items.push(o);
@@ -737,6 +790,87 @@
         sp.position.copy(a).add(b).multiplyScalar(0.5);
         g.add(sp);
         return g;
+      }
+      // Gewähltes Sanitärprodukt: Produktfoto über dem Objekt und – wenn am Produkt hinterlegt – das echte 3D-Modell statt der Grundform
+      decorate(o) {
+        const T = this.T, pr = o.userData.prod;
+        if (pr.img) {
+          const card = new T.Sprite(new T.SpriteMaterial({ depthTest: false, transparent: true }));
+          card.renderOrder = 12; card.visible = false; card.userData.keep = true;
+          const top = Math.max.apply(null, (o.userData.elev || [[0, 0, 0, 0.8]]).map((e) => e[3]));
+          card.position.set(0, Math.min(top + 0.35, (this.size.h || 2.5) - 0.1), (o.userData.d || 0.5) / 2);
+          card.scale.set(0.44, 0.55, 1);
+          o.add(card);
+          o.userData.card = card;
+          this.cardTex(pr).then((tex) => {
+            if (!card.parent) return;
+            card.material.map = tex; card.material.needsUpdate = true;
+            card.visible = this.mode !== '2d' && this.showCards;
+            this.render();
+          });
+        }
+        if (pr.m3d && o.userData.body && o.userData.fit) this.loadModel(o, pr.m3d);
+      }
+      cardTex(pr) {
+        this.cardCache = this.cardCache || {};
+        const id = pr.img + '|' + pr.t + '|' + pr.vt;
+        if (this.cardCache[id]) return this.cardCache[id];
+        return (this.cardCache[id] = new Promise((res) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const draw = (ok) => {
+            const cv = document.createElement('canvas');
+            cv.width = 320; cv.height = 400;
+            const c = cv.getContext('2d');
+            c.fillStyle = '#fff'; c.fillRect(0, 0, 320, 400);
+            if (ok) { const r = Math.min(300 / img.width, 290 / img.height), w = img.width * r, h = img.height * r; c.drawImage(img, 10 + (300 - w) / 2, 10 + (290 - h) / 2, w, h); }
+            c.fillStyle = '#b8955a'; c.fillRect(0, 394, 320, 6);
+            c.fillStyle = '#111'; c.font = '600 21px sans-serif'; c.textBaseline = 'top';
+            const words = (pr.t + (pr.vt ? ' · ' + pr.vt : '')).split(/\s+/), lines = [''];
+            words.forEach((wd) => { const t = (lines[lines.length - 1] + ' ' + wd).trim(); if (c.measureText(t).width > 296 && lines[lines.length - 1]) lines.push(wd); else lines[lines.length - 1] = t; });
+            lines.slice(0, 3).forEach((l, i) => c.fillText(i === 2 && lines.length > 3 ? l + ' …' : l, 12, 306 + i * 27));
+            const tex = new this.T.CanvasTexture(cv);
+            tex.colorSpace = this.T.SRGBColorSpace;
+            res(tex);
+          };
+          img.onload = () => draw(true);
+          img.onerror = () => draw(false);
+          img.src = pr.img.indexOf('//') === 0 ? 'https:' + pr.img : pr.img;
+        }));
+      }
+      // GLB-Modell laden, auf die Produktmaße bringen und an die Stelle der Grundform setzen
+      loadModel(o, url) {
+        const T = this.T;
+        this.models = this.models || {};
+        if (!this.models[url]) {
+          this.models[url] = (gltfLoad = gltfLoad || import(GLTF_URL)).then((mod) => new Promise((res, rej) => {
+            new mod.GLTFLoader().load(url.indexOf('//') === 0 ? 'https:' + url : url, (g) => res(g.scene), undefined, rej);
+          }));
+        }
+        this.models[url].then((scene) => {
+          if (!o.parent || o.userData.model) return;
+          const f = o.userData.fit, mdl = scene.clone(true), holder = new T.Group();
+          holder.add(mdl);
+          let b = new T.Box3().setFromObject(holder), sz = b.getSize(new T.Vector3());
+          // Modell liegt quer (lange Seite in der Tiefe) → um 90° drehen
+          if ((sz.x - sz.z) * (f.w - f.d) < 0 && Math.abs(sz.x - sz.z) > 0.15 * Math.max(sz.x, sz.z)) {
+            mdl.rotation.y = Math.PI / 2;
+            holder.updateMatrixWorld(true);
+            b = new T.Box3().setFromObject(holder); sz = b.getSize(new T.Vector3());
+          }
+          if (!(sz.x > 0)) return;
+          const kx = f.w / sz.x, kz = f.stretch ? f.d / sz.z : kx, ky = f.stretch ? Math.min(kx, kz) : kx;
+          holder.scale.set(kx, ky, kz);
+          holder.updateMatrixWorld(true);
+          b = new T.Box3().setFromObject(holder);
+          const c = b.getCenter(new T.Vector3());
+          holder.position.set(-c.x, f.top != null ? f.top - b.max.y : (f.y || 0) - b.min.y, f.z - b.min.z);
+          holder.traverse((m) => { if (m.isMesh) { m.castShadow = m.receiveShadow = true; } });
+          o.userData.body.forEach((m) => { m.visible = false; });
+          o.userData.model = holder;
+          o.add(holder);
+          this.render();
+        }).catch(() => { /* ohne Modell bleibt die Grundform stehen */ });
       }
       label(text) {
         const T = this.T;
@@ -823,7 +957,8 @@
         const T = this.T;
         const o = new T.Group();
         const m = (opt) => new T.MeshStandardMaterial(opt);
-        const ceramic = () => m({ color: 0xfafaf8, roughness: 0.12 });
+        const pr = it.prod || {};
+        const ceramic = () => m({ color: pr.col != null && pr.col !== 0x8a6a48 ? pr.col : 0xfafaf8, roughness: pr.gloss === 0 ? 0.6 : 0.12 });
         const chrome = () => m({ color: 0xd4d6d8, metalness: 0.6, roughness: 0.25 });
         const box = (w, h, d, mt, x, y, z) => { const b = new T.Mesh(new T.BoxGeometry(w, h, d), mt); b.position.set(x, y, z); o.add(b); return b; };
         const cyl = (r, h, mt, x, y, z) => { const c = new T.Mesh(new T.CylinderGeometry(r, r, h, 32), mt); c.position.set(x, y, z); o.add(c); return c; };
@@ -831,6 +966,7 @@
         if (it.key === 'wc') {
           // Wand-WC: Vorsatzschale 15 cm (Unterputz-Spülkasten), gefliest; Fliesen der Front mittig zur Drückerplatte
           const vw = 0.9, vh = 1.2, vd = it.stand ? 0 : 0.15;
+          const b0 = o.children.length;
           if (it.stand) { box(0.37, 0.2, 0.62, ceramic(), 0, 0.32, 0.31); box(0.22, 0.24, 0.3, ceramic(), 0, 0.12, 0.3); box(0.42, 0.38, 0.18, ceramic(), 0, 0.65, 0.09); }
           else {
             const vb = this.tiledBox(vw, vh, vd, this.wallTex);
@@ -838,12 +974,14 @@
             for (let i = 16; i < 20; i++) uv.setX(i, uv.getX(i) - vw / 2 / this.wallTex.bw);
             vb.position.set(0, vh / 2, vd / 2);
             o.add(vb);
-            box(0.37, 0.2, 0.54, ceramic(), 0, 0.32, vd + 0.27);
+            o.userData.body = [box(0.37, 0.2, 0.54, ceramic(), 0, 0.32, vd + 0.27)];
             box(0.25, 0.16, 0.01, chrome(), 0, 1.05, vd + 0.005);
             o.userData.vorwand = { w: vw, h: vh, d: vd };
             o.userData.tileArea = vw * vh + vw * vd + 2 * vd * vh;
           }
-          box(0.38, 0.025, 0.5, ceramic(), 0, 0.435, vd + 0.27);
+          const seat = box(0.38, 0.025, 0.5, ceramic(), 0, 0.435, vd + 0.27);
+          o.userData.body = it.stand ? o.children.slice(b0) : o.userData.body.concat(seat);
+          o.userData.fit = it.stand ? { w: 0.38, d: 0.65, z: 0, y: 0 } : { w: 0.38, d: 0.55, z: vd, top: 0.45 };
           o.userData.w = it.stand ? 0.45 : vw; o.userData.d = it.stand ? 0.65 : vd + 0.55;
           o.userData.elev = it.stand ? [[-0.19, 0.19, 0, 0.42], [-0.21, 0.21, 0.46, 0.84]] : [[-vw / 2, vw / 2, 0, vh], [-0.19, 0.19, 0.2, 0.44], [-0.125, 0.125, 0.97, 1.13]];
           o.userData.conn = it.stand
@@ -867,7 +1005,7 @@
         } else if (it.key === 'vanity') {
           const vw = it.w || (it.double ? 1.4 : 0.8);
           const basins = it.double ? [-vw / 4, vw / 4] : [0];
-          const front = m({ color: { wood: 0x8a6a48, white: 0xf2f1ee, black: 0x2a2826, grey: 0x8d8b88 }[it.color || 'wood'], roughness: it.color === 'white' ? 0.35 : 0.6 });
+          const front = m({ color: pr.col != null && it.form === 'cabinet' ? pr.col : { wood: 0x8a6a48, white: 0xf2f1ee, black: 0x2a2826, grey: 0x8d8b88 }[it.color || 'wood'], roughness: it.color === 'white' ? 0.35 : 0.6 });
           const form = it.form || 'cabinet';
           if (form === 'cabinet') {
             if (it.stand) { box(vw, 0.7, 0.46, front, 0, 0.43, 0.23); box(vw - 0.04, 0.08, 0.42, m({ color: 0x3a3632, roughness: 0.8 }), 0, 0.04, 0.21); }
@@ -888,13 +1026,19 @@
             box(vw, 0.16, 0.46, ceramic(), 0, 0.77, 0.23);
             basins.forEach((x) => box(0.06, 0.25, 0.06, ceramic(), x, 0.56, 0.12));
           }
+          o.userData.body = o.children.slice();
+          const hang = !(form === 'pedestal' || (form === 'cabinet' && it.stand));
+          o.userData.fit = hang ? { w: vw, d: it.d || 0.48, z: 0, top: form === 'vessel' ? 1.0 : 0.86 } : { w: vw, d: it.d || 0.48, z: 0, y: 0 };
           basins.forEach((x) => box(0.03, 0.2, 0.03, chrome(), x, 0.92, 0.06));
-          const mirror = new T.Mesh(new T.PlaneGeometry(vw, 0.75), m({ color: 0xc9d3d8, metalness: 0.4, roughness: 0.05 }));
-          mirror.position.set(0, 1.5, 0.01);
+          // Spiegel: Maße aus dem gewählten Spiegel (Breite × Höhe), sonst so breit wie der Waschtisch
+          const mw = it.mirror ? Math.min(Math.max(it.mirror[0], 0.3), 2) : vw, mh = it.mirror ? Math.min(Math.max(it.mirror[1], 0.3), 1.2) : 0.75;
+          const my = Math.min(1.05 + mh / 2 + 0.05, H - mh / 2 - 0.08);
+          const mirror = new T.Mesh(it.round ? new T.CircleGeometry(mw / 2, 48) : new T.PlaneGeometry(mw, mh), m({ color: 0xc9d3d8, metalness: 0.4, roughness: 0.05 }));
+          mirror.position.set(0, my, 0.01);
           o.add(mirror);
-          if (it.led) box(vw, 0.02, 0.02, m({ color: 0xfff4dc, emissive: 0xfff0d0, emissiveIntensity: 1.2 }), 0, 1.9, 0.02);
-          o.userData.w = vw; o.userData.d = 0.5;
-          o.userData.elev = [[-vw / 2, vw / 2, it.stand ? 0 : 0.33, 0.83], [-vw / 2, vw / 2, 1.125, 1.875]];
+          if (it.led) box(it.round ? mw * 0.6 : mw, 0.02, 0.02, m({ color: 0xfff4dc, emissive: 0xfff0d0, emissiveIntensity: 1.2 }), 0, my + (it.round ? mw : mh) / 2 + 0.03, 0.02);
+          o.userData.w = vw; o.userData.d = it.d ? Math.max(it.d, 0.3) + 0.02 : 0.5;
+          o.userData.elev = [[-vw / 2, vw / 2, hang ? 0.33 : 0, 0.83], [-mw / 2, mw / 2, my - (it.round ? mw : mh) / 2, my + (it.round ? mw : mh) / 2]];
           o.userData.conn = [];
           basins.forEach((x) => o.userData.conn.push({ x: x - 0.1, y: 0.55, t: 'WW', n: 'Warmwasser Waschtisch' }, { x: x + 0.1, y: 0.55, t: 'KW', n: 'Kaltwasser Waschtisch' }, { x, y: 0.55, t: 'AW', n: 'Abwasser DN 40/50' }));
           o.userData.conn.push({ x: vw / 2 + 0.2, y: 1.1, t: 'E', n: 'Steckdose' });
@@ -903,7 +1047,7 @@
         } else if (it.key === 'shower') {
           const sw = it.w, sd = it.d, gh = Math.min(2, H - 0.05);
           const glass = () => m({ color: 0xd6ecf0, transparent: true, opacity: 0.22, roughness: 0, side: T.DoubleSide, depthWrite: false });
-          if (it.tray) box(sw, 0.04, sd, ceramic(), 0, 0.02, sd / 2);
+          if (it.tray) { o.userData.body = [box(sw, 0.04, sd, ceramic(), 0, 0.02, sd / 2)]; o.userData.fit = { w: sw, d: sd, z: 0, y: 0, stretch: true }; }
           const dark = m({ color: 0x55524d, metalness: 0.5, roughness: 0.4 });
           if (/Rinne/i.test(it.drain)) box(sw - 0.2, 0.006, 0.07, dark, 0, it.tray ? 0.045 : 0.004, 0.12);
           else if (/Wand/i.test(it.drain)) box(0.4, 0.06, 0.01, dark, 0, 0.08, 0.005);
@@ -971,6 +1115,7 @@
             box(tl, 0.04, td, ceramic(), 0, 0.57, td / 2);
           }
           box(tl - 0.22, 0.01, td - 0.2, m({ color: 0xe3ecef, roughness: 0.05 }), 0, it.type === 'free' ? 0.585 : 0.595, td / 2);
+          if (it.type === 'free') { o.userData.body = o.children.slice(0, 1).concat(o.children.slice(2)); o.userData.fit = { w: tl, d: td, z: 0, y: 0 }; }
           if (it.type === 'whirl') [-0.4, 0, 0.4].forEach((x) => cyl(0.03, 0.012, chrome(), x, 0.6, td - 0.18));
           o.userData.w = tl; o.userData.d = td;
           if (it.type !== 'free') o.userData.tileArea = tl * 0.55;
@@ -1011,6 +1156,7 @@
           o.userData.conn = [{ x: 0, y: H - 0.3, t: 'E', n: 'Lüfter' }];
         } else return null;
         o.userData.key = it.key;
+        o.userData.prod = it.prod || null;
         return o;
       }
       // ---------- Fugenbild ----------
@@ -1763,7 +1909,7 @@
         }
         if (this.walls2d) this.walls2d.visible = flat;
         if (this.kneeDim) this.kneeDim.visible = !flat;
-        this.items.forEach((o) => { o.userData.fp.visible = flat; });
+        this.items.forEach((o) => { o.userData.fp.visible = flat; if (o.userData.card) o.userData.card.visible = !flat && this.showCards && !!o.userData.card.material.map; });
         if (this.rd) {
           const c = this.camera.position, fz = flat || c.z > s.b / 2, fx = !flat && c.x > s.l / 2, o = flat ? 0.4 : 0.3;
           this.rd.len.position.set(0, 0.01, fz ? s.b + o : -o);
@@ -2144,9 +2290,23 @@
         // Im Sanitär-Schritt gewählte Produkte haben Vorrang vor der Ausstattungs-Option (Maße/Ausführung aus dem Namen)
         const prod = (cats) => san.filter((x) => cats.indexOf(this.sanCat(x.p)) > -1).map((x) => x.p.t + ' ' + ((x.p.vs.find((v) => v.id === x.vid) || {}).t || ''))[0] || '';
         const cmIn = (t) => { const m = t.match(/(\d{2,3})\s*cm/i); return m ? +m[1] / 100 : 0; };
+        // Gewähltes Produkt je Kategorie: Name, Variante, Foto, 3D-Modell, Farbe, Oberfläche
+        const info = (cats) => {
+          const x = san.find((y) => cats.indexOf(this.sanCat(y.p)) > -1);
+          if (!x) return null;
+          const v = x.p.vs.find((vv) => vv.id === x.vid) || x.p.vs[0] || {};
+          const vt = v.t && v.t !== 'Default Title' ? v.t : '';
+          const all = x.p.t + ' ' + vt;
+          return {
+            t: clean(x.p.t).replace(/\s*[–-]\s*Preis auf Anfrage\s*$/i, ''), vt, img: v.img || x.p.img || '', m3d: x.p.m3d || '',
+            col: prodColor(vt) != null ? prodColor(vt) : prodColor(x.p.t),
+            gloss: /brillo|glänz|gloss|lucido/i.test(all) ? 1 : /mate|matt|opaco|slate|stone/i.test(all) ? 0 : null,
+          };
+        };
+        const dimsOf = (t) => { const m = (t || '').match(/(\d{2,3})\s*[x×]\s*(\d{2,3})/); return m ? [+m[1] / 100, +m[2] / 100] : null; };
         const wcP = prod(['WC']);
         const wc = wcP ? (/stand/i.test(wcP) ? 'Stand-WC' : /dusch/i.test(wcP) ? 'Dusch-WC' : 'Wand-WC') : L('WC')[0] || '';
-        if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc), dusch: /Dusch-WC/.test(wc) });
+        if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc), dusch: /Dusch-WC/.test(wc), prod: info(['WC']) });
         L('WC-Extras').forEach((t) => { if (/Bidet/.test(t)) out.push({ key: 'bidet' }); if (/Urinal/.test(t)) out.push({ key: 'urinal' }); });
         const dusche = L('Dusche');
         const trayP = prod(['Duschwannen']);
@@ -2154,7 +2314,7 @@
           const pm = trayP.match(/(\d{2,3})\s*[x×]\s*(\d{2,3})/);
           const size = pm ? [0, Math.max(+pm[1], +pm[2]), Math.min(+pm[1], +pm[2])] : (L('Duschgröße')[0] || '').match(/(\d+)\s*×\s*(\d+)/);
           out.push({
-            key: 'shower', w: size ? +size[1] / 100 : 0.9, d: size ? +size[2] / 100 : 0.9,
+            key: 'shower', w: size ? +size[1] / 100 : 0.9, d: size ? +size[2] / 100 : 0.9, prod: info(['Duschwannen']),
             tray: !!trayP || (dusche.some((t) => /Duschwanne/.test(t)) && !dusche.some((t) => /Bodengleich/.test(t))),
             drain: L('Duschablauf')[0] || '', head: L('Duschbrause')[0] || '', glass: L('Duschabtrennung')[0] || '', extras: L('Dusch-Extras'),
             niches: /Trennmauer/.test(L('Duschabtrennung')[0] || '') ? +(((L('Nischen in der Trennmauer')[0] || '').match(/\d+/) || [0])[0]) : 0,
@@ -2163,14 +2323,15 @@
         const tubP = prod(['Badewannen']);
         const wanne = tubP ? (/freistehend|freestanding|exent/i.test(tubP) ? 'Freistehende Badewanne' : /whirl/i.test(tubP) ? 'Whirlpool-Wanne' : 'Einbauwanne') : L('Badewanne')[0] || '';
         const tm = tubP.match(/(\d{3})\s*[x×]\s*(\d{2,3})/);
-        if (wanne) out.push({ key: 'tub', type: /Freistehend/.test(wanne) ? 'free' : /Whirlpool/.test(wanne) ? 'whirl' : 'built', len: tm ? +tm[1] / 100 : 0, dep: tm ? +tm[2] / 100 : 0 });
+        if (wanne) out.push({ key: 'tub', type: /Freistehend/.test(wanne) ? 'free' : /Whirlpool/.test(wanne) ? 'whirl' : 'built', len: tm ? +tm[1] / 100 : 0, dep: tm ? +tm[2] / 100 : 0, prod: info(['Badewannen']) });
         const wp = L('Waschplatz')[0] || '';
         const vq = sanQ('Waschtische') + sanQ('Badmöbel') + sanQ('Waschtischplatten');
         const licht = L('Heizung & Licht');
         const vP = prod(['Badmöbel', 'Waschtische', 'Waschtischplatten']);
-        const vw = cmIn(vP);
+        const vd3 = (vP.match(/(\d{2,3})(?:,\d)?\s*[x×]\s*(\d{2,3})(?:,\d)?/) || []);
+        const vw = vd3[1] ? +vd3[1] / 100 : cmIn(vP);
         if (wp || vq || !decided) out.push({
-          key: 'vanity', w: vw >= 0.4 && vw <= 2.4 ? vw : 0,
+          key: 'vanity', w: vw >= 0.4 && vw <= 2.4 ? vw : 0, d: vd3[2] && +vd3[2] >= 30 && +vd3[2] <= 70 ? +vd3[2] / 100 : 0,
           double: vP ? /doppel|doble|double|2 becken|zwei becken/i.test(vP) : /Doppel/.test(wp) || sanQ('Waschtische') >= 2,
           // Bauform für die 3D-Darstellung
           form: !vP || /möbel|set|unterschrank|schublade|versa|pack/i.test(vP) ? 'cabinet'
@@ -2178,7 +2339,10 @@
             : /stand|de pie|freestanding|freistehend/i.test(vP) ? 'pedestal' : 'wall',
           stand: /stehend|standwasch|de pie|freestanding|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
           color: /eiche|holz|nuss|teak|natur/i.test(vP) ? 'wood' : /schwarz|black/i.test(vP) ? 'black' : /grau|anthrazit|grey/i.test(vP) ? 'grey' : /weiß|weiss|white/i.test(vP) ? 'white' : vP ? 'white' : 'wood',
-          led: licht.some((t) => /LED/.test(t)),
+          led: licht.some((t) => /LED/.test(t)) || /light|led|beleucht/i.test(prod(['Spiegel'])),
+          prod: info(['Badmöbel', 'Waschtische', 'Waschtischplatten']),
+          // Spiegel: Maße aus der gewählten Variante (z. B. 80 × 80 cm)
+          mirror: dimsOf(prod(['Spiegel'])), round: /rund|round|redondo|circle|kreis|Ø/i.test(prod(['Spiegel'])),
         });
         if (licht.some((t) => /Handtuch/.test(t)) || prod(['Heizkörper'])) out.push({ key: 'radiator' });
         if (licht.some((t) => /Lüfter/.test(t))) out.push({ key: 'fan' });
