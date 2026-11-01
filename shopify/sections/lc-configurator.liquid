@@ -869,20 +869,24 @@
           o.userData.conn = [{ x: 0, y: 0.5, t: 'AW', n: 'Abwasser DN 50 (lt. Hersteller)' }, { x: 0, y: 1.2, t: 'KW', n: 'Zulauf (lt. Hersteller)' }];
           o.userData.arm = 0;
         } else if (it.key === 'vanity') {
-          const vw = it.double ? 1.4 : 0.8;
-          box(vw, 0.45, 0.46, m({ color: 0x6f5a45, roughness: 0.6 }), 0, 0.55, 0.23);
+          const vw = it.w || (it.double ? 1.4 : 0.8);
+          const basins = it.double ? [-vw / 4, vw / 4] : [0];
+          const front = m({ color: { wood: 0x8a6a48, white: 0xf2f1ee, black: 0x2a2826, grey: 0x8d8b88 }[it.color || 'wood'], roughness: it.color === 'white' ? 0.35 : 0.6 });
+          if (it.stand) { box(vw, 0.7, 0.46, front, 0, 0.43, 0.23); box(vw - 0.04, 0.08, 0.42, m({ color: 0x3a3632, roughness: 0.8 }), 0, 0.04, 0.21); }
+          else box(vw, 0.45, 0.46, front, 0, 0.55, 0.23);
+          [0.36, 0.58].forEach((y) => { if (it.stand || y > 0.4) box(vw - 0.02, 0.004, 0.005, m({ color: 0x555049 }), 0, y + (it.stand ? 0 : 0.02), 0.462); });
           box(vw + 0.02, 0.05, 0.48, ceramic(), 0, 0.8, 0.24);
-          (it.double ? [-0.35, 0.35] : [0]).forEach((x) => box(0.03, 0.2, 0.03, chrome(), x, 0.92, 0.06));
+          basins.forEach((x) => box(0.03, 0.2, 0.03, chrome(), x, 0.92, 0.06));
           const mirror = new T.Mesh(new T.PlaneGeometry(vw, 0.75), m({ color: 0xc9d3d8, metalness: 0.4, roughness: 0.05 }));
           mirror.position.set(0, 1.5, 0.01);
           o.add(mirror);
           if (it.led) box(vw, 0.02, 0.02, m({ color: 0xfff4dc, emissive: 0xfff0d0, emissiveIntensity: 1.2 }), 0, 1.9, 0.02);
           o.userData.w = vw; o.userData.d = 0.5;
-          o.userData.elev = [[-vw / 2, vw / 2, 0.33, 0.83], [-vw / 2, vw / 2, 1.125, 1.875]];
+          o.userData.elev = [[-vw / 2, vw / 2, it.stand ? 0 : 0.33, 0.83], [-vw / 2, vw / 2, 1.125, 1.875]];
           o.userData.conn = [];
-          (it.double ? [-0.35, 0.35] : [0]).forEach((x) => o.userData.conn.push({ x: x - 0.1, y: 0.55, t: 'WW', n: 'Warmwasser Waschtisch' }, { x: x + 0.1, y: 0.55, t: 'KW', n: 'Kaltwasser Waschtisch' }, { x, y: 0.55, t: 'AW', n: 'Abwasser DN 40/50' }));
+          basins.forEach((x) => o.userData.conn.push({ x: x - 0.1, y: 0.55, t: 'WW', n: 'Warmwasser Waschtisch' }, { x: x + 0.1, y: 0.55, t: 'KW', n: 'Kaltwasser Waschtisch' }, { x, y: 0.55, t: 'AW', n: 'Abwasser DN 40/50' }));
           o.userData.conn.push({ x: vw / 2 + 0.2, y: 1.1, t: 'E', n: 'Steckdose' });
-          o.userData.arm = it.double ? -0.35 : 0; o.userData.armName = it.double ? 'linkes Becken' : 'Becken';
+          o.userData.arm = basins[0]; o.userData.armName = it.double ? 'linkes Becken' : 'Becken';
           if (it.led) o.userData.conn.push({ x: 0, y: 2.0, t: 'E', n: 'Spiegelleuchte / LED' });
         } else if (it.key === 'shower') {
           const sw = it.w, sd = it.d, gh = Math.min(2, H - 0.05);
@@ -941,7 +945,8 @@
           if (/Wand/i.test(it.drain)) o.userData.conn.push({ x: 0, y: 0.08, t: 'AW', n: 'Wandablauf' });
           o.userData.floorConn = /Wand/i.test(it.drain) ? [] : [{ x: 0, z: /Rinne/i.test(it.drain) ? 0.12 : sd / 2, t: 'AW', n: /Rinne/i.test(it.drain) ? 'Duschrinne' : it.tray ? 'Ablauf Duschwanne' : 'Bodenablauf Dusche' }];
         } else if (it.key === 'tub') {
-          const tl = it.type === 'whirl' ? 1.8 : it.type === 'free' ? 1.6 : 1.7, td = it.type === 'whirl' ? 0.9 : 0.75;
+          const tl = it.len >= 1.2 && it.len <= 2.2 ? it.len : it.type === 'whirl' ? 1.8 : it.type === 'free' ? 1.6 : 1.7;
+          const td = it.dep >= 0.6 && it.dep <= 1.2 ? it.dep : it.type === 'whirl' ? 0.9 : 0.75;
           if (it.type === 'free') {
             box(tl, 0.58, td, ceramic(), 0, 0.29, td / 2);
             cyl(0.02, 0.9, chrome(), tl / 2 - 0.05, 0.45, td + 0.1);
@@ -2042,7 +2047,11 @@
         const sanT = (cat) => san.filter((x) => this.sanCat(x.p) === cat).map((x) => x.p.t).join(' ');
         const decided = this.project() === 'komplettbad' && this.maxIdx >= this.flow.indexOf('ausstattung');
         const out = [];
-        const wc = L('WC')[0] || (sanQ('WC') ? 'WC' : '');
+        // Im Sanitär-Schritt gewählte Produkte haben Vorrang vor der Ausstattungs-Option (Maße/Ausführung aus dem Namen)
+        const prod = (cats) => san.filter((x) => cats.indexOf(this.sanCat(x.p)) > -1).map((x) => x.p.t + ' ' + ((x.p.vs.find((v) => v.id === x.vid) || {}).t || ''))[0] || '';
+        const cmIn = (t) => { const m = t.match(/(\d{2,3})\s*cm/i); return m ? +m[1] / 100 : 0; };
+        const wcP = prod(['WC']);
+        const wc = wcP ? (/stand/i.test(wcP) ? 'Stand-WC' : /dusch/i.test(wcP) ? 'Dusch-WC' : 'Wand-WC') : L('WC')[0] || '';
         if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc), dusch: /Dusch-WC/.test(wc) });
         L('WC-Extras').forEach((t) => { if (/Bidet/.test(t)) out.push({ key: 'bidet' }); if (/Urinal/.test(t)) out.push({ key: 'urinal' }); });
         const dusche = L('Dusche');
@@ -2055,12 +2064,22 @@
             niches: /Trennmauer/.test(L('Duschabtrennung')[0] || '') ? +(((L('Nischen in der Trennmauer')[0] || '').match(/\d+/) || [0])[0]) : 0,
           });
         }
-        const wanne = L('Badewanne')[0] || (sanQ('Badewannen') ? (/freistehend/i.test(sanT('Badewannen')) ? 'Freistehende Badewanne' : 'Einbauwanne') : '');
-        if (wanne) out.push({ key: 'tub', type: /Freistehend/.test(wanne) ? 'free' : /Whirlpool/.test(wanne) ? 'whirl' : 'built' });
+        const tubP = prod(['Badewannen']);
+        const wanne = tubP ? (/freistehend/i.test(tubP) ? 'Freistehende Badewanne' : /whirl/i.test(tubP) ? 'Whirlpool-Wanne' : 'Einbauwanne') : L('Badewanne')[0] || '';
+        const tm = tubP.match(/(\d{3})\s*[x×]\s*(\d{2,3})/);
+        if (wanne) out.push({ key: 'tub', type: /Freistehend/.test(wanne) ? 'free' : /Whirlpool/.test(wanne) ? 'whirl' : 'built', len: tm ? +tm[1] / 100 : 0, dep: tm ? +tm[2] / 100 : 0 });
         const wp = L('Waschplatz')[0] || '';
         const vq = sanQ('Waschtische') + sanQ('Badmöbel') + sanQ('Waschtischplatten');
         const licht = L('Heizung & Licht');
-        if (wp || vq || !decided) out.push({ key: 'vanity', double: /Doppel/.test(wp) || sanQ('Waschtische') >= 2, led: licht.some((t) => /LED/.test(t)) });
+        const vP = prod(['Badmöbel', 'Waschtische', 'Waschtischplatten']);
+        const vw = cmIn(vP);
+        if (wp || vq || !decided) out.push({
+          key: 'vanity', w: vw >= 0.4 && vw <= 2.4 ? vw : 0,
+          double: vP ? /doppel|2 becken|zwei becken/i.test(vP) || vw >= 1.2 : /Doppel/.test(wp) || sanQ('Waschtische') >= 2,
+          stand: /stehend|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
+          color: /eiche|holz|nuss|teak|natur/i.test(vP) ? 'wood' : /schwarz|black/i.test(vP) ? 'black' : /grau|anthrazit|grey/i.test(vP) ? 'grey' : /weiß|weiss|white/i.test(vP) ? 'white' : vP ? 'white' : 'wood',
+          led: licht.some((t) => /LED/.test(t)),
+        });
         if (licht.some((t) => /Handtuch/.test(t))) out.push({ key: 'radiator' });
         if (licht.some((t) => /Lüfter/.test(t))) out.push({ key: 'fan' });
         return out;
