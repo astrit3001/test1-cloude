@@ -53,19 +53,25 @@
             <span class="lc-cfg__3d-hint" data-3d-hint>3D-Vorschau wird geladen …</span>
           </div>
           <div class="lc-cfg__3d-bar">
-            <span class="lc-cfg__3d-title">3D-Vorschau Ihres Raums</span>
+            <span class="lc-cfg__3d-title">Ansicht</span>
             <button type="button" data-3d-zoom="1" aria-label="Näher heran">+</button>
             <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
             <button type="button" class="lc-cfg__3d-mode" data-3d-mode>2D-Grundriss</button>
             <button type="button" data-3d-dims aria-pressed="true">Maße</button>
+            <button type="button" data-3d-zones aria-pressed="false">Schutzbereiche</button>
+            <button type="button" data-3d-move aria-pressed="false">Objekte verschieben</button>
+            <button type="button" data-3d-save>Als Bild speichern</button>
+          </div>
+          <div class="lc-cfg__3d-bar">
+            <span class="lc-cfg__3d-title">Planung</span>
+            <button type="button" class="lc-cfg__3d-mode" data-3d-auto>Automatisch planen</button>
             <button type="button" data-3d-extra="door" aria-pressed="true">Tür</button>
             <button type="button" data-3d-extra="window" aria-pressed="false">Fenster</button>
             <button type="button" data-3d-snap aria-pressed="true">Fugenraster</button>
-            <button type="button" class="lc-cfg__3d-mode" data-3d-print>Pläne drucken</button>
-            <button type="button" data-3d-move aria-pressed="false">Objekte verschieben</button>
             <button type="button" data-3d-reset>Zurücksetzen</button>
-            <button type="button" data-3d-save>Als Bild speichern</button>
+            <button type="button" class="lc-cfg__3d-mode" data-3d-print>Pläne drucken</button>
           </div>
+          <ul class="lc-cfg__3d-check" data-3d-check></ul>
           <p class="lc-cfg__3d-note">Dusche, WC, Waschtisch & Co. lassen sich frei im Raum verschieben (nahe der Wand rasten sie ein) – Maße und Aufteilung werden mit Ihrer Anfrage übermittelt. Vereinfachte Darstellung nach Ihren Maßen und im echten Fliesenformat, Sanitärobjekte symbolisch. Farbe und Struktur können je nach Bildschirm abweichen – Muster sehen Sie in unserer Ausstellung.</p>
         </div>
       {%- endif -%}
@@ -233,9 +239,13 @@
     const WALL_NAMES = { back: 'Rückwand', front: 'Vorderwand', left: 'linke Wand', right: 'rechte Wand' };
     const CONN_COLORS = { KW: '#1f6fd1', WW: '#d12f2f', MW: '#8a3fd1', AW: '#555555', HZ: '#c2185b', E: '#e09a00' };
     const CONN_NAMES = { KW: 'Kaltwasser', WW: 'Warmwasser', MW: 'Mischwasser', AW: 'Abwasser', HZ: 'Heizung', E: 'Elektro' };
+    const JOINT_TXT = { ok: 'Fugen laufen in den Boden durch', near: 'Fugen laufen fast durch (wenige mm Versatz)', no: 'Fugen laufen nicht durch', shift: 'Raster an Armatur ausgerichtet' };
     const fmtM = (v) => Math.max(0, v).toFixed(2).replace('.', ',') + ' m';
     const cm = (v) => Math.round(v * 1000) / 10;
     const cmT = (v) => String(cm(v)).replace('.', ',');
+    const GROUT = 0.2; // Fugenbreite in cm
+    // Bewegungsflächen & Abstände für die automatische Planung (Richtwerte; VDI 6000: 80 × 75 cm vor dem WC)
+    const PLAN = { shower: { side: 0, front: 0.75 }, tub: { side: 0, front: 0.75 }, wc: { side: 0.2, front: 0.75 }, bidet: { side: 0.2, front: 0.75 }, urinal: { side: 0.2, front: 0.75 }, vanity: { side: 0.05, front: 0.75 }, radiator: { side: 0.05, front: 0 }, fan: { side: 0, front: 0 } };
     // Symmetrische Verlegung: Abstand der ersten Fuge vom Wandanfang, so dass beide Randstücke gleich und möglichst groß sind
     const tileStart = (len, t) => {
       const m = (v) => ((v % t) + t) % t;
@@ -251,10 +261,10 @@
     };
     // Wände: [Länge, Mitte x, Mitte z, Drehung, Punkt entlang der Wand (u ab Wandmitte) -> [x, z]]; Normale zeigt in den Raum
     const wallDefs = (s) => [
-      [s.l, s.l / 2, 0, 0, (u) => [s.l / 2 + u, 0]],
-      [s.l, s.l / 2, s.b, Math.PI, (u) => [s.l / 2 - u, s.b]],
-      [s.b, 0, s.b / 2, Math.PI / 2, (u) => [0, s.b / 2 - u]],
-      [s.b, s.l, s.b / 2, -Math.PI / 2, (u) => [s.l, s.b / 2 + u]],
+      [s.l, s.l / 2, 0, 0, (u) => [s.l / 2 + u, 0], 'back'],
+      [s.l, s.l / 2, s.b, Math.PI, (u) => [s.l / 2 - u, s.b], 'front'],
+      [s.b, 0, s.b / 2, Math.PI / 2, (u) => [0, s.b / 2 - u], 'left'],
+      [s.b, s.l, s.b / 2, -Math.PI / 2, (u) => [s.l, s.b / 2 + u], 'right'],
     ];
     // Geflieste Wandfläche bis Höhe wh, unter einer Dachschräge entsprechend weniger
     const wallArea = (s, wh) => wallDefs(s).reduce((sum, [len, , , , at]) => {
@@ -290,6 +300,14 @@
         });
         this.extra = { door: true, window: false };
         this.snapOn = true;
+        this.showZones = false;
+        const zonesBtn = box.querySelector('[data-3d-zones]');
+        zonesBtn.addEventListener('click', () => {
+          this.showZones = !this.showZones;
+          zonesBtn.setAttribute('aria-pressed', this.showZones);
+          if (this.state && this.T) { this.build(this.state); this.render(); }
+        });
+        box.querySelector('[data-3d-auto]').addEventListener('click', () => this.autoPlan());
         const snapBtn = box.querySelector('[data-3d-snap]');
         snapBtn.addEventListener('click', () => { this.snapOn = !this.snapOn; snapBtn.setAttribute('aria-pressed', this.snapOn); });
         box.querySelector('[data-3d-print]').addEventListener('click', () => this.print(this.meta ? this.meta() : { title: 'Badplanung', facts: [] }));
@@ -313,6 +331,7 @@
           this.view = { theta: -0.65, phi: 1.0, zoom: 1 };
           this.place = {};
           this.active = null;
+          this.autoNotes = null;
           if (this.state) { this.build(this.state); if (this.onLayout) this.onLayout(); }
           this.render();
         });
@@ -392,10 +411,7 @@
             // Frei im Raum: Objektmitte folgt dem Zeiger, nahe der Wand (< 15 cm) rastet es an der Wand ein
             const dist = d[wall] - drag.userData.d / 2;
             let pos = wall === 'back' || wall === 'front' ? p.x : p.z;
-            if (this.snapOn && this.wallTex) {
-              const t = this.wallTex.bw / 2, e = tileStart(wall === 'back' || wall === 'front' ? s.l : s.b, t);
-              pos = e + Math.round((pos - e) / (t / 2)) * (t / 2);
-            }
+            if (this.snapOn && this.joints && !drag.userData.wallOnly) pos = this.snapPos(drag, wall, pos);
             drag.userData.place = { wall, pos, dist: dist < 0.15 || drag.userData.wallOnly ? 0 : dist };
             this.put(drag);
             this.active = drag.userData.key;
@@ -418,6 +434,7 @@
           if (drag) {
             this.place[drag.userData.key] = Object.assign({}, drag.userData.place);
             this.highlight(drag, false);
+            this.renderChecks();
             this.render();
             if (this.onLayout) this.onLayout();
           }
@@ -446,12 +463,13 @@
         if (this.tex[id]) return this.tex[id];
         const T = this.T;
         const tw = t ? Math.max(t.w, t.h) : 60, th = t ? Math.min(t.w, t.h) : 60;
-        const px = 512 / tw;
-        const W = Math.round(tw * px), H = Math.round(th * px);
+        const pw = tw + GROUT, ph = th + GROUT;
+        const px = 512 / pw;
+        const W = Math.round(pw * px), H = Math.round(ph * px);
         const cv = document.createElement('canvas');
         cv.width = W * 2; cv.height = H * 2;
         const ctx = cv.getContext('2d');
-        const grout = Math.max(1.5, 0.3 * px);
+        const grout = Math.max(1.5, GROUT * px);
         const draw = (img) => {
           let lum = 0.85;
           ctx.fillStyle = '#ddd8d0';
@@ -481,7 +499,7 @@
         tex.wrapS = tex.wrapT = T.RepeatWrapping;
         tex.colorSpace = T.SRGBColorSpace;
         tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-        const out = this.tex[id] = { tex, bw: (tw * 2) / 100, bh: (th * 2) / 100, gloss: !!(t && t.gloss) };
+        const out = this.tex[id] = { tex, bw: (pw * 2) / 100, bh: (ph * 2) / 100, tw: tw / 100, th: th / 100, gloss: !!(t && t.gloss) };
         if (t && t.url) {
           const img = new Image();
           img.crossOrigin = 'anonymous';
@@ -549,50 +567,6 @@
           g.add(gr);
         }
         this.wallTex = this.texture(s.wall || s.floor);
-        if (s.h) {
-          // Wandflächen als Umriss: oben begrenzt durch die Decke (ggf. Dachschräge), Fliesen bis wallH, darüber Putz
-          wallDefs(s).forEach(([len, x, z, ry, at]) => {
-            const top = [];
-            for (let i = 0; i <= 48; i++) { const u = -len / 2 + (i * len) / 48; const q = at(u); top.push([u, ceilY(s, q[0], q[1])]); }
-            const shape = (lo, hi) => {
-              const sh = new T.Shape();
-              top.forEach(([u, y], i) => (i ? sh.lineTo(u, lo(y)) : sh.moveTo(u, lo(y))));
-              for (let i = top.length - 1; i >= 0; i--) sh.lineTo(top[i][0], hi(top[i][1]));
-              return new T.ShapeGeometry(sh);
-            };
-            const add = (geo, mat) => { const m = new T.Mesh(geo, mat); m.position.set(x, 0, z); m.rotation.y = ry; g.add(m); };
-            if (s.wallH) {
-              const geo = shape(() => 0, (y) => Math.min(y, s.wallH));
-              const uv = geo.attributes.uv;
-              const e = tileStart(len, this.wallTex.bw / 2);
-              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2 - e) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
-              add(geo, this.tiledMat(this.wallTex));
-            }
-            if (top.some(([, y]) => y > s.wallH + 0.001)) add(shape((y) => Math.min(y, s.wallH), (y) => y), paint);
-          });
-          if (s.slope) {
-            // Schräge Dachfläche, durchscheinend, damit man von außen hineinsehen kann
-            const sl = s.slope, along = sl.side === 'back' || sl.side === 'front' ? s.l : s.b;
-            const room = sl.side === 'back' || sl.side === 'front' ? s.b : s.l;
-            const de = Math.min(sl.d, room), ye = sl.k + ((s.h - sl.k) * de) / Math.max(0.01, sl.d);
-            const w = (u, dist, y) => ({ back: new T.Vector3(u, y, dist), front: new T.Vector3(u, y, s.b - dist), left: new T.Vector3(dist, y, u), right: new T.Vector3(s.l - dist, y, u) })[sl.side];
-            const a = w(0, 0, sl.k), b = w(along, 0, sl.k), c = w(along, de, ye), d = w(0, de, ye);
-            const geo = new T.BufferGeometry().setFromPoints([a, b, c, a, c, d]);
-            geo.computeVertexNormals();
-            g.add(new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0xf6f3ee, roughness: 0.9, transparent: true, opacity: 0.35, side: T.DoubleSide, depthWrite: false })));
-            // Kniestock-Maß in der Mitte der Schrägwand und Linie im Grundriss, wo die volle Höhe beginnt
-            const m0 = w(along / 2, 0.02, 0), m1 = w(along / 2, 0.02, sl.k);
-            this.kneeDim = this.dim(m0, m1, 'Kniestock ' + fmtM(sl.k), sl.side === 'left' || sl.side === 'right' ? new T.Vector3(0, 0, 0.06) : new T.Vector3(0.06, 0, 0));
-            this.dimsG.add(this.kneeDim);
-            const l0 = w(0, de, 0.03), l1 = w(along, de, 0.03);
-            const ln = new T.Line(new T.BufferGeometry().setFromPoints([l0, l1]), new T.LineBasicMaterial({ color: 0x8a6a3a, depthTest: false }));
-            ln.renderOrder = 9;
-            this.walls2d.add(ln);
-            const lb = this.label('Dachschräge · Kniestock ' + fmtM(sl.k));
-            lb.position.copy(w(along * 0.62, de / 2, 0.05));
-            this.walls2d.add(lb);
-          }
-        }
         this.items = [];
         let backUsed = 0;
         const items = (s.items || []).concat(s.h ? ['door', 'window'].filter((k) => this.extra[k]).map((key) => ({ key })) : []);
@@ -626,8 +600,56 @@
           g.add(o);
           this.items.push(o);
         });
+        // Wände erst jetzt: das Fugenraster richtet sich nach den Armaturen
+        this.computeJoints();
+        if (s.h) {
+          // Wandflächen als Umriss: oben begrenzt durch die Decke (ggf. Dachschräge), Fliesen bis wallH, darüber Putz
+          wallDefs(s).forEach(([len, x, z, ry, at, name]) => {
+            const top = [];
+            for (let i = 0; i <= 48; i++) { const u = -len / 2 + (i * len) / 48; const q = at(u); top.push([u, ceilY(s, q[0], q[1])]); }
+            const shape = (lo, hi) => {
+              const sh = new T.Shape();
+              top.forEach(([u, y], i) => (i ? sh.lineTo(u, lo(y)) : sh.moveTo(u, lo(y))));
+              for (let i = top.length - 1; i >= 0; i--) sh.lineTo(top[i][0], hi(top[i][1]));
+              return new T.ShapeGeometry(sh);
+            };
+            const add = (geo, mat) => { const m = new T.Mesh(geo, mat); m.position.set(x, 0, z); m.rotation.y = ry; g.add(m); };
+            if (s.wallH) {
+              const geo = shape(() => 0, (y) => Math.min(y, s.wallH));
+              const uv = geo.attributes.uv;
+              const e = this.joints[name].eu;
+              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2 - e) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
+              add(geo, this.tiledMat(this.wallTex));
+            }
+            if (top.some(([, y]) => y > s.wallH + 0.001)) add(shape((y) => Math.min(y, s.wallH), (y) => y), paint);
+          });
+          if (s.slope) {
+            // Schräge Dachfläche, durchscheinend, damit man von außen hineinsehen kann
+            const sl = s.slope, along = sl.side === 'back' || sl.side === 'front' ? s.l : s.b;
+            const room = sl.side === 'back' || sl.side === 'front' ? s.b : s.l;
+            const de = Math.min(sl.d, room), ye = sl.k + ((s.h - sl.k) * de) / Math.max(0.01, sl.d);
+            const w = (u, dist, y) => ({ back: new T.Vector3(u, y, dist), front: new T.Vector3(u, y, s.b - dist), left: new T.Vector3(dist, y, u), right: new T.Vector3(s.l - dist, y, u) })[sl.side];
+            const a = w(0, 0, sl.k), b = w(along, 0, sl.k), c = w(along, de, ye), d = w(0, de, ye);
+            const geo = new T.BufferGeometry().setFromPoints([a, b, c, a, c, d]);
+            geo.computeVertexNormals();
+            g.add(new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0xf6f3ee, roughness: 0.9, transparent: true, opacity: 0.35, side: T.DoubleSide, depthWrite: false })));
+            // Kniestock-Maß in der Mitte der Schrägwand und Linie im Grundriss, wo die volle Höhe beginnt
+            const m0 = w(along / 2, 0.02, 0), m1 = w(along / 2, 0.02, sl.k);
+            this.kneeDim = this.dim(m0, m1, 'Kniestock ' + fmtM(sl.k), sl.side === 'left' || sl.side === 'right' ? new T.Vector3(0, 0, 0.06) : new T.Vector3(0.06, 0, 0));
+            this.dimsG.add(this.kneeDim);
+            const l0 = w(0, de, 0.03), l1 = w(along, de, 0.03);
+            const ln = new T.Line(new T.BufferGeometry().setFromPoints([l0, l1]), new T.LineBasicMaterial({ color: 0x8a6a3a, depthTest: false }));
+            ln.renderOrder = 9;
+            this.walls2d.add(ln);
+            const lb = this.label('Dachschräge · Kniestock ' + fmtM(sl.k));
+            lb.position.copy(w(along * 0.62, de / 2, 0.05));
+            this.walls2d.add(lb);
+          }
+        }
+        if (this.showZones) this.zoneMeshes(g);
         this.scene.add(g);
         this.itemDims();
+        this.renderChecks();
       }
       // Maßlinie von a nach b mit Endstrichen und Beschriftung in der Mitte
       dim(a, b, text, tick) {
@@ -743,17 +765,20 @@
             ? [{ x: 0, y: 0.18, t: 'AW', n: 'Abwasser DN 100 (waagerecht)' }, { x: -0.2, y: 0.15, t: 'KW', n: 'Eckventil Spülkasten' }]
             : [{ x: 0, y: 0.23, t: 'AW', n: 'Abwasser DN 100' }, { x: 0, y: 1.0, t: 'KW', n: 'Zulauf Spülkasten im Vorwandelement' }];
           if (it.dusch) o.userData.conn.push({ x: 0.3, y: 0.3, t: 'E', n: 'Steckdose Dusch-WC' });
+          o.userData.arm = 0; o.userData.armY = it.stand ? undefined : 1.05; o.userData.armName = it.stand ? '' : 'Drückerplatte';
         } else if (it.key === 'bidet') {
           box(0.36, 0.22, 0.52, ceramic(), 0, 0.31, 0.26);
           cyl(0.015, 0.1, chrome(), 0, 0.47, 0.06);
           o.userData.w = 0.42; o.userData.d = 0.52;
           o.userData.elev = [[-0.18, 0.18, 0.2, 0.42]];
           o.userData.conn = [{ x: 0, y: 0.2, t: 'AW', n: 'Abwasser DN 50' }, { x: -0.08, y: 0.4, t: 'WW', n: 'Warmwasser' }, { x: 0.08, y: 0.4, t: 'KW', n: 'Kaltwasser' }];
+          o.userData.arm = 0;
         } else if (it.key === 'urinal') {
           box(0.34, 0.55, 0.3, ceramic(), 0, 0.85, 0.15);
           o.userData.w = 0.4; o.userData.d = 0.3;
           o.userData.elev = [[-0.17, 0.17, 0.57, 1.12]];
           o.userData.conn = [{ x: 0, y: 0.5, t: 'AW', n: 'Abwasser DN 50 (lt. Hersteller)' }, { x: 0, y: 1.2, t: 'KW', n: 'Zulauf (lt. Hersteller)' }];
+          o.userData.arm = 0;
         } else if (it.key === 'vanity') {
           const vw = it.double ? 1.4 : 0.8;
           box(vw, 0.45, 0.46, m({ color: 0x6f5a45, roughness: 0.6 }), 0, 0.55, 0.23);
@@ -768,6 +793,7 @@
           o.userData.conn = [];
           (it.double ? [-0.35, 0.35] : [0]).forEach((x) => o.userData.conn.push({ x: x - 0.1, y: 0.55, t: 'WW', n: 'Warmwasser Waschtisch' }, { x: x + 0.1, y: 0.55, t: 'KW', n: 'Kaltwasser Waschtisch' }, { x, y: 0.55, t: 'AW', n: 'Abwasser DN 40/50' }));
           o.userData.conn.push({ x: vw / 2 + 0.2, y: 1.1, t: 'E', n: 'Steckdose' });
+          o.userData.arm = it.double ? -0.35 : 0; o.userData.armName = it.double ? 'linkes Becken' : 'Becken';
           if (it.led) o.userData.conn.push({ x: 0, y: 2.0, t: 'E', n: 'Spiegelleuchte / LED' });
         } else if (it.key === 'shower') {
           const sw = it.w, sd = it.d, gh = Math.min(2, H - 0.05);
@@ -818,7 +844,10 @@
           o.userData.w = sw; o.userData.d = sd;
           o.userData.elev = [[-sw / 2, sw / 2, 0, gh]];
           o.userData.dash = true;
-          o.userData.conn = [{ x: sw / 2 - 0.275, y: 1.1, t: 'WW', n: 'Armatur Dusche (Unterputz)' }, { x: sw / 2 - 0.125, y: 1.1, t: 'KW', n: 'Armatur Dusche (Unterputz)' }];
+          o.userData.conn = [{ x: sw / 2 - 0.275, y: 1.1, t: 'WW', n: 'Armatur Dusche (Unterputz)', arm: true }, { x: sw / 2 - 0.125, y: 1.1, t: 'KW', n: 'Armatur Dusche (Unterputz)', arm: true }];
+          o.userData.arm = sw / 2 - 0.2; o.userData.armY = 1.1; o.userData.armName = 'Armatur';
+          o.userData.tray = !!it.tray;
+          o.userData.outlet = hand ? [sw / 2 - 0.2, 0.05] : [0, Math.min(0.35, sd / 2)];
           if (!hand) o.userData.conn.push({ x: 0, y: Math.min(2.2, H - 0.05), t: 'MW', n: 'Kopfbrause' });
           if (/Wand/i.test(it.drain)) o.userData.conn.push({ x: 0, y: 0.08, t: 'AW', n: 'Wandablauf' });
           o.userData.floorConn = /Wand/i.test(it.drain) ? [] : [{ x: 0, z: /Rinne/i.test(it.drain) ? 0.12 : sd / 2, t: 'AW', n: /Rinne/i.test(it.drain) ? 'Duschrinne' : it.tray ? 'Ablauf Duschwanne' : 'Bodenablauf Dusche' }];
@@ -839,7 +868,8 @@
           if (it.type === 'whirl') [-0.4, 0, 0.4].forEach((x) => cyl(0.03, 0.012, chrome(), x, 0.6, td - 0.18));
           o.userData.w = tl; o.userData.d = td;
           o.userData.elev = [[-tl / 2, tl / 2, 0, 0.6]];
-          o.userData.conn = it.type === 'free' ? [] : [{ x: -0.08, y: 0.75, t: 'WW', n: 'Wannenarmatur' }, { x: 0.08, y: 0.75, t: 'KW', n: 'Wannenarmatur' }];
+          o.userData.conn = it.type === 'free' ? [] : [{ x: -0.08, y: 0.75, t: 'WW', n: 'Wannenarmatur', arm: true }, { x: 0.08, y: 0.75, t: 'KW', n: 'Wannenarmatur', arm: true }];
+          if (it.type !== 'free') { o.userData.arm = 0; o.userData.armY = 0.75; o.userData.armName = 'Armatur'; }
           if (it.type === 'whirl') o.userData.conn.push({ x: tl / 2 - 0.2, y: 0.3, t: 'E', n: 'Whirlpool (lt. Hersteller)' });
           o.userData.floorConn = [{ x: -tl / 2 + 0.25, z: td / 2, t: 'AW', n: 'Ab- und Überlauf Wanne' }];
           if (it.type === 'free') o.userData.floorConn.push({ x: tl / 2 - 0.08, z: td + 0.1, t: 'WW', n: 'Standarmatur' }, { x: tl / 2 - 0.02, z: td + 0.1, t: 'KW', n: 'Standarmatur' });
@@ -876,6 +906,265 @@
         o.userData.key = it.key;
         return o;
       }
+      // ---------- Fugenbild ----------
+      // Grundraster: Boden symmetrisch, jede Wand so, dass eine Wandfuge auf der Bodenfuge nahe der Wandmitte liegt
+      // (Abweichung > 5 mm: Wand symmetrisch). Danach richtet sich jede Wand nach ihrer wichtigsten Armatur
+      // (Dusche > Wanne > Waschtisch > WC …): liegt sie nicht auf Fuge/Fliesenmitte, wird das Wandraster verschoben.
+      computeJoints() {
+        const s = this.size, ft = this.texture(s.floor), pw = this.wallTex.bw / 2, g = GROUT / 100;
+        const mod = (v, p) => ((v % p) + p) % p, near = (v, p) => { const r = mod(v, p); return Math.min(r, p - r); };
+        const lenOf = (w) => (w === 'back' || w === 'front' ? s.l : s.b);
+        const finish = (j, wall) => {
+          const len = lenOf(wall);
+          j.ew = mod(j.ew, pw);
+          j.eu = wall === 'back' || wall === 'right' ? j.ew : mod(len - j.ew, pw);
+          j.edgeL = (j.eu < 0.001 ? pw : j.eu) - g;
+          j.edgeR = (mod(len - j.eu, pw) || pw) - g;
+          return j;
+        };
+        this.floorJ = { px: ft.bw / 2, pz: ft.bh / 2, ex: tileStart(s.l, ft.bw / 2), ez: tileStart(s.b, ft.bh / 2) };
+        this.jointsBase = {};
+        this.joints = {};
+        const lead = ['shower', 'tub', 'vanity', 'wc', 'bidet', 'urinal'];
+        ['back', 'front', 'left', 'right'].forEach((wall) => {
+          const along = wall === 'back' || wall === 'front';
+          const len = lenOf(wall), pf = along ? this.floorJ.px : this.floorJ.pz, ef = along ? this.floorJ.ex : this.floorJ.ez;
+          const fc = ef + Math.round((len / 2 - ef) / pf) * pf;
+          let ew = mod(fc, pw), dev = 0, n = 0;
+          const fine = pw <= pf;
+          for (let x = fine ? ef : ew; x < len - 0.001; x += fine ? pf : pw) if (x > 0.001) { dev = Math.max(dev, fine ? near(x - ew, pw) : near(x - ef, pf)); n++; }
+          const status = !n || dev <= 0.0015 ? 'ok' : dev <= 0.005 ? 'near' : 'no';
+          if (status === 'no') ew = tileStart(len, pw);
+          const base = this.jointsBase[wall] = finish({ ew, pw, dev, status }, wall);
+          const j = Object.assign({}, base);
+          const o = (this.items || []).filter((i) => i.userData.place && i.userData.place.wall === wall && !(i.userData.place.dist > 0.05) && lead.indexOf(i.userData.key) > -1)
+            .sort((a, b) => lead.indexOf(a.userData.key) - lead.indexOf(b.userData.key))[0];
+          if (o) {
+            const a = o.userData.place.pos + this.armDir(wall) * (o.userData.arm || 0), h = pw / 2;
+            const off = a - (j.ew + Math.round((a - j.ew) / h) * h);
+            if (Math.abs(off) > 0.003) { j.ew += off; j.status = 'shift'; j.shift = Math.abs(off); j.lead = ITEM_NAMES[o.userData.key]; finish(j, wall); }
+          }
+          this.joints[wall] = j;
+        });
+      }
+      armDir(wall) { return wall === 'back' || wall === 'right' ? 1 : -1; }
+      // Objekt so setzen, dass seine Armatur auf dem bodenbündigen Raster mittig auf Fuge oder Fliese sitzt
+      snapPos(o, wall, pos) {
+        const j = (this.jointsBase || this.joints)[wall], h = j.pw / 2, k = this.armDir(wall) * (o.userData.arm || 0);
+        return j.ew + Math.round((pos + k - j.ew) / h) * h - k;
+      }
+      // Armaturhöhe auf die nächste Fuge bzw. Fliesenmitte legen (höchstens 10 cm verschieben)
+      armHeight(y) {
+        const ph = this.wallTex.bh / 2, h = ph / 2, c = Math.round(y / h) * h;
+        return Math.abs(c - y) <= 0.1 && (!this.size.wallH || c < this.size.wallH) ? c : y;
+      }
+      connY(k) { return k.arm ? this.armHeight(k.y) : k.y; }
+      // ---------- Schutzbereiche nach DIN VDE 0100-701 (Ausgabe 2008-10) ----------
+      // Wanne/Duschwanne: Bereich 1 = Grundfläche bis 2,25 m, Bereich 2 = weitere 0,60 m.
+      // Bodengleiche Dusche: nur Bereich 1, Radius 1,20 m um den festen Wasserauslass.
+      zones() {
+        const T = this.T, out = [];
+        this.items.forEach((o) => {
+          const u = o.userData;
+          o.updateMatrixWorld(true);
+          if (u.key === 'tub' || (u.key === 'shower' && u.tray)) out.push({ o, kind: 'rect' });
+          else if (u.key === 'shower') out.push({ o, kind: 'circle', c: new T.Vector3(u.outlet[0], 0, u.outlet[1]).applyMatrix4(o.matrixWorld) });
+        });
+        return out;
+      }
+      zoneAt(x, y, z) {
+        if (y > 2.25) return null;
+        const T = this.T;
+        let best = null;
+        this.zones().forEach((zn) => {
+          if (zn.kind === 'circle') { if (Math.hypot(x - zn.c.x, z - zn.c.z) <= 1.2) best = 1; return; }
+          const u = zn.o.userData, p = new T.Vector3(x, 0, z).applyMatrix4(zn.o.matrixWorld.clone().invert());
+          const inR = (m) => p.x >= -u.w / 2 - m && p.x <= u.w / 2 + m && p.z >= -m && p.z <= u.d + m;
+          if (inR(0.01)) best = 1; else if (inR(0.6) && best !== 1) best = 2;
+        });
+        return best;
+      }
+      // [Bereich, Punkte (x, z) in Weltkoordinaten]
+      zoneShapes() {
+        const T = this.T, out = [];
+        this.zones().forEach((zn) => {
+          if (zn.kind === 'circle') {
+            const pts = [];
+            for (let i = 0; i < 48; i++) { const a = (i / 48) * Math.PI * 2; pts.push([zn.c.x + 1.2 * Math.cos(a), zn.c.z + 1.2 * Math.sin(a)]); }
+            out.push([1, pts]);
+            return;
+          }
+          const u = zn.o.userData;
+          [[2, 0.6], [1, 0]].forEach(([b, m]) => out.push([b, [[-u.w / 2 - m, -m], [u.w / 2 + m, -m], [u.w / 2 + m, u.d + m], [-u.w / 2 - m, u.d + m]].map(([x, z]) => { const q = new T.Vector3(x, 0, z).applyMatrix4(zn.o.matrixWorld); return [q.x, q.z]; })]));
+        });
+        return out;
+      }
+      zonesSVG() {
+        const s = this.size, sh = this.zoneShapes();
+        if (!sh.length) return '';
+        let o = '<clipPath id="lc-zclip"><rect x="0" y="0" width="' + cm(s.l) + '" height="' + cm(s.b) + '"/></clipPath><g clip-path="url(#lc-zclip)">';
+        sh.forEach(([b, pts]) => {
+          o += '<polygon points="' + pts.map(([x, z]) => cm(x) + ',' + cm(z)).join(' ') + '" fill="' + (b === 1 ? 'rgba(224,90,0,.16)' : 'rgba(224,154,0,.10)') + '" stroke="' + (b === 1 ? '#e05a00' : '#e09a00') + '" stroke-width="1" stroke-dasharray="5 3"/>';
+          const c = pts.reduce((a, q) => [a[0] + q[0] / pts.length, a[1] + q[1] / pts.length], [0, 0]);
+          if (b === 2) o += '<text x="' + (cm(c[0]) + 4) + '" y="' + (cm(Math.max.apply(null, pts.map((q) => q[1]))) - 4) + '" font-size="7" fill="#b07800" text-anchor="middle">Bereich 2</text>';
+          else o += '<text x="' + cm(c[0]) + '" y="' + (cm(c[1]) + 14) + '" font-size="7" fill="#c04a00" text-anchor="middle">Bereich 1 (bis 2,25 m)</text>';
+        });
+        return o + '</g>';
+      }
+      zoneMeshes(g) {
+        const T = this.T, s = this.size;
+        const clip = [new T.Plane(new T.Vector3(1, 0, 0), 0), new T.Plane(new T.Vector3(-1, 0, 0), s.l), new T.Plane(new T.Vector3(0, 0, 1), 0), new T.Plane(new T.Vector3(0, 0, -1), s.b)];
+        this.renderer.localClippingEnabled = true;
+        g.updateMatrixWorld(true);
+        this.zoneShapes().forEach(([b, pts]) => {
+          const sh = new T.Shape(pts.map(([x, z]) => new T.Vector2(x, -z)));
+          const m = new T.Mesh(new T.ShapeGeometry(sh), new T.MeshBasicMaterial({ color: b === 1 ? 0xe05a00 : 0xe09a00, transparent: true, opacity: b === 1 ? 0.28 : 0.16, depthWrite: false, clippingPlanes: clip }));
+          m.rotation.x = -Math.PI / 2;
+          m.position.y = b === 1 ? 0.012 : 0.008;
+          m.renderOrder = 5;
+          g.add(m);
+        });
+      }
+      // ---------- Planungs-Check ----------
+      checks() {
+        const out = [], s = this.size;
+        if (!s || !this.joints || !this.room) return out;
+        this.room.updateMatrixWorld(true);
+        const mm = (v) => Math.round(v * 1000);
+        if (s.h && s.wallH) ['back', 'right', 'front', 'left'].forEach((w) => {
+          const j = this.joints[w], nm = WALL_NAMES[w];
+          if (j.status === 'ok') out.push({ grp: 'fuge', lvl: 'ok', t: nm + ': Wandfugen laufen in die Bodenfugen durch' });
+          else if (j.status === 'shift') out.push({ grp: 'fuge', lvl: 'warn', t: nm + ': Raster an der Armatur (' + j.lead + ') ausgerichtet – Wandfugen ' + cmT(j.shift) + ' cm gegen die Bodenfugen versetzt. Tipp: ' + j.lead + ' um ' + cmT(j.shift) + ' cm verschieben, dann läuft beides durch.' });
+          else if (j.status === 'near') out.push({ grp: 'fuge', lvl: 'warn', t: nm + ': Fugen laufen fast durch – max. ' + mm(j.dev) + ' mm Versatz (Fliese + 2-mm-Fuge passt nicht exakt ins Bodenraster)' });
+          else out.push({ grp: 'fuge', lvl: 'bad', t: nm + ': Wand- und Bodenformat passen nicht zueinander – Fugen laufen nicht durch' });
+          const small = Math.min(j.edgeL, j.edgeR);
+          if (small < j.pw / 3) out.push({ grp: 'fuge', lvl: 'warn', t: nm + ': schmales Randstück ' + cmT(small) + ' cm' });
+        });
+        this.items.forEach((o) => {
+          const u = o.userData;
+          if (u.arm === undefined || u.place.dist > 0.05) return;
+          const j = this.joints[u.place.wall], a = u.place.pos + this.armDir(u.place.wall) * u.arm;
+          const r = ((a - j.ew) % j.pw + j.pw) % j.pw, dj = Math.min(r, j.pw - r), dm = Math.abs(r - j.pw / 2);
+          const nm = ITEM_NAMES[u.key] + (u.armName ? ' – ' + u.armName : '');
+          let lvl = 'ok', t = nm + (dj <= 0.003 ? ': mittig auf der Fuge' : ': mittig auf der Fliese');
+          if (dj > 0.003 && dm > 0.003) { lvl = 'warn'; t = nm + ': ' + cmT(Math.min(dj, dm)) + ' cm neben Fuge bzw. Fliesenmitte – verschieben („Fugenraster“ an)'; }
+          if (u.armY && (!s.wallH || u.armY < s.wallH)) {
+            const y2 = this.armHeight(u.armY);
+            t += Math.abs(y2 - u.armY) < 0.001 ? ', Höhe ' + cmT(u.armY) + ' cm passt' : ', Höhe auf ' + cmT(y2) + ' cm statt ' + cmT(u.armY) + ' cm (Fuge/Fliesenmitte)';
+          }
+          out.push({ grp: 'fuge', lvl, t });
+        });
+        this.items.forEach((o) => (o.userData.conn || []).filter((k) => k.t === 'E').forEach((k) => {
+          const q = new this.T.Vector3(k.x, k.y, 0.02).applyMatrix4(o.matrixWorld);
+          const z = this.zoneAt(q.x, q.y, q.z), nm = ITEM_NAMES[o.userData.key] + ': ' + k.n;
+          if (!z) out.push({ grp: 'elek', lvl: 'ok', t: nm + ' – außerhalb der Schutzbereiche' });
+          else if (/Steckdose/.test(k.n)) out.push({ grp: 'elek', lvl: 'bad', t: nm + ' liegt in Bereich ' + z + ' – 230-V-Steckdose dort nicht zulässig (Ausnahme: Rasiersteckdose nach VDE 0570, SELV/PELV)' });
+          else out.push({ grp: 'elek', lvl: 'warn', t: nm + ' liegt in Bereich ' + z + ' – nur fest angeschlossen, mind. ' + (z === 1 ? 'IPX5' : 'IPX4') });
+        }));
+        (this.autoNotes || []).forEach((t) => out.push({ grp: 'plan', lvl: /^Automatisch geplant/.test(t) ? 'ok' : 'warn', t }));
+        return out;
+      }
+      checkList(list) {
+        return list.length ? '<ul class="lc-print__checks">' + list.map((c) => '<li class="is-' + c.lvl + '">' + esc(c.t) + '</li>').join('') + '</ul>' : '';
+      }
+      renderChecks() {
+        const ul = this.box.querySelector('[data-3d-check]');
+        if (!ul) return;
+        const c = this.checks();
+        ul.innerHTML = c.length ? '<li class="lc-cfg__3d-check-h">Planungs-Check</li>' + c.map((x) => '<li class="is-' + x.lvl + '">' + esc(x.t) + '</li>').join('') : '';
+      }
+      // ---------- Automatische Planung ----------
+      // Regeln (Richtwerte): Dusche weit weg von der Tür in eine Ecke, Wanne in eine Ecke an einer langen Wand, WC an die
+      // Installationswand von Dusche/Wanne, Waschtisch nahe der Tür; vor jedem Objekt 75 cm Bewegungsfläche, am WC 20 cm
+      // seitlich frei, nichts im Türaufschlag, Steckdosen außerhalb der Schutzbereiche, Armaturen auf Fuge bzw. Fliesenmitte.
+      // Für Dusche und Wanne werden mehrere Varianten durchgespielt, der Rest wird nacheinander bestmöglich gesetzt.
+      autoPlan() {
+        if (!this.size || !this.items.length) return;
+        const s = this.size;
+        const lenOf = (w) => (w === 'back' || w === 'front' ? s.l : s.b);
+        const rect = (w, a0, a1, d0, d1) => ({ back: [a0, a1, d0, d1], front: [a0, a1, s.b - d1, s.b - d0], left: [d0, d1, a0, a1], right: [s.l - d1, s.l - d0, a0, a1] })[w];
+        const pt = (w, a, d) => ({ back: [a, d], front: [a, s.b - d], left: [d, a], right: [s.l - d, a] })[w];
+        const hit = (r, q) => !!(r && q) && r[0] < q[1] - 0.001 && q[0] < r[1] - 0.001 && r[2] < q[3] - 0.001 && q[2] < r[3] - 0.001;
+        const inside = (r) => r[0] >= -0.001 && r[1] <= s.l + 0.001 && r[2] >= -0.001 && r[3] <= s.b + 0.001;
+        const inZone = (p, zones) => zones.some((z) => (z.c ? Math.hypot(p[0] - z.c[0], p[1] - z.c[1]) <= 1.2 : p[0] >= z.r[0] - 0.6 && p[0] <= z.r[1] + 0.6 && p[1] >= z.r[2] - 0.6 && p[1] <= z.r[3] + 0.6));
+        const fixed = [];
+        let doorPt = null, doorWall = null, win = null;
+        this.items.forEach((o) => {
+          const u = o.userData, p = u.place;
+          if (u.key === 'door') { doorWall = p.wall; doorPt = pt(p.wall, p.pos, 0.45); fixed.push({ fp: rect(p.wall, p.pos - u.w / 2, p.pos + u.w / 2, 0, u.w), clr: null, door: true }); }
+          if (u.key === 'window') win = { wall: p.wall, a0: p.pos - u.w / 2, a1: p.pos + u.w / 2 };
+        });
+        const order = ['shower', 'tub', 'wc', 'bidet', 'vanity', 'urinal', 'radiator', 'fan'];
+        const items = this.items.filter((o) => order.indexOf(o.userData.key) > -1).sort((a, b) => order.indexOf(a.userData.key) - order.indexOf(b.userData.key));
+        const cands = (o, st) => {
+          const u = o.userData, sp = PLAN[u.key], w = u.w, d = u.d, out = [];
+          const socket = u.key === 'vanity' ? w / 2 + 0.2 : u.key === 'wc' && (u.conn || []).some((k) => /Steckdose/.test(k.n)) ? 0.3 : null;
+          ['back', 'right', 'front', 'left'].forEach((wall) => {
+            const len = lenOf(wall);
+            if (len < w + 2 * sp.side) return;
+            const list = [w / 2 + sp.side, len - w / 2 - sp.side];
+            for (let a = w / 2 + sp.side; a <= len - w / 2 - sp.side + 0.0001; a += 0.05) list.push(a);
+            if (this.snapOn && u.arm !== undefined) list.slice().forEach((a) => list.push(this.snapPos(o, wall, a)));
+            list.forEach((a) => {
+              if (a - w / 2 - sp.side < -0.001 || a + w / 2 + sp.side > len + 0.001) return;
+              const fp = rect(wall, a - w / 2 - sp.side, a + w / 2 + sp.side, 0, d);
+              const clr = sp.front ? rect(wall, a - w / 2, a + w / 2, d, d + sp.front) : null;
+              // Bewegungsflächen dürfen sich überlagern und in den Türaufschlag reichen, Objekte nicht
+              if (!inside(fp) || st.placed.some((q) => hit(fp, q.fp) || hit(fp, q.clr) || (!q.door && hit(clr, q.fp)))) return;
+              const c = pt(wall, a, d / 2), dDoor = doorPt ? Math.hypot(c[0] - doorPt[0], c[1] - doorPt[1]) : 0;
+              const corner = a - w / 2 - sp.side < 0.02 || a + w / 2 + sp.side > len - 0.02;
+              const onWin = !!win && win.wall === wall && a + w / 2 > win.a0 && a - w / 2 < win.a1;
+              const q = pt(wall, a, Math.min(d + 0.2, 0.8)), head = ceilY(s, q[0], q[1]);
+              let sc = clr && !inside(clr) ? -20 : 0;
+              if (u.key === 'shower') sc += 2 * dDoor + (corner ? 3 : 0) - (wall === doorWall ? 3 : 0) - (onWin ? 3 : 0) - (head < 2.0 ? 30 : 0);
+              if (u.key === 'tub') sc += (corner ? 3 : 0) + len / 2 + dDoor * 0.5 - (wall === doorWall ? 2 : 0);
+              if (u.key === 'wc' || u.key === 'urinal') sc += (wall === st.wallOf.shower || wall === st.wallOf.tub ? 3 : 0) + dDoor * 0.5 - (head < 1.6 ? 20 : 0);
+              if (u.key === 'bidet') sc += wall === st.wallOf.wc ? 4 - Math.abs(a - st.wallOf.wcPos) : 0;
+              if (u.key === 'vanity') sc += -1.5 * dDoor - (onWin ? 10 : 0) - (head < 1.9 ? 20 : 0);
+              if (u.key === 'radiator') sc += -dDoor;
+              if (u.key === 'fan') sc += dDoor;
+              if (socket !== null && inZone(pt(wall, a + this.armDir(wall) * socket, 0.02), st.zones)) sc -= 15;
+              if (this.snapOn && u.arm !== undefined && Math.abs(this.snapPos(o, wall, a) - a) < 0.001) sc += 1;
+              out.push({ sc, wall, a, fp, clr });
+            });
+          });
+          return out.sort((x, y) => y.sc - x.sc);
+        };
+        const zoneOf = (o, c) => {
+          const u = o.userData;
+          if (u.key === 'tub' || (u.key === 'shower' && u.tray)) return [{ r: rect(c.wall, c.a - u.w / 2, c.a + u.w / 2, 0, u.d) }];
+          if (u.key === 'shower') return [{ c: pt(c.wall, c.a + this.armDir(c.wall) * u.outlet[0], u.outlet[1]) }];
+          return [];
+        };
+        const run = (i, st) => {
+          if (i === items.length) return st;
+          const o = items[i], u = o.userData, list = cands(o, st);
+          if (!list.length) return run(i + 1, Object.assign({}, st, { fails: st.fails + 1, notes: st.notes.concat([ITEM_NAMES[u.key] + ': kein Platz mit ausreichender Bewegungsfläche – bitte von Hand platzieren']) }));
+          // Varianten aus verschiedenen Wänden/Ecken durchspielen (je Wand-Hälfte die beste), Rest nacheinander
+          const n = { shower: 8, tub: 8, wc: 3, vanity: 3 }[u.key] || 1, seen = {}, tryList = [];
+          list.forEach((c) => { const k = c.wall + (c.a < lenOf(c.wall) / 2 ? 'L' : 'R'); if (!seen[k] && tryList.length < n) { seen[k] = 1; tryList.push(c); } });
+          let best = null;
+          tryList.forEach((c) => {
+            const wallOf = Object.assign({}, st.wallOf, { [u.key]: c.wall });
+            if (u.key === 'wc') wallOf.wcPos = c.a;
+            const r = run(i + 1, {
+              score: st.score + c.sc, fails: st.fails, wallOf,
+              placed: st.placed.concat([{ fp: c.fp, clr: c.clr }]),
+              zones: st.zones.concat(zoneOf(o, c)),
+              places: Object.assign({}, st.places, { [u.key]: { wall: c.wall, pos: c.a, dist: 0 } }),
+              notes: c.clr && !inside(c.clr) ? st.notes.concat([ITEM_NAMES[u.key] + ': Bewegungsfläche davor kleiner als 75 cm']) : st.notes,
+            });
+            if (!best || r.fails < best.fails || (r.fails === best.fails && r.score > best.score)) best = r;
+          });
+          return best;
+        };
+        const res = run(0, { score: 0, fails: 0, wallOf: {}, placed: fixed, zones: [], places: {}, notes: [] });
+        Object.assign(this.place, res.places);
+        this.autoNotes = res.notes.length ? res.notes : ['Automatisch geplant: Dusche weit weg von der Tür, WC an der Installationswand, Waschtisch nahe der Tür, 75 cm Bewegungsfläche vor jedem Objekt, 20 cm seitlich am WC, Steckdosen außerhalb der Schutzbereiche, Armaturen auf Fuge bzw. Fliesenmitte. Bitte prüfen und bei Bedarf verschieben.'];
+        this.build(this.state);
+        this.render();
+        if (this.onLayout) this.onLayout();
+      }
       layoutText(all) {
         if (!all && !this.items.some((o) => this.place[o.userData.key])) return [];
         return this.items.map((o) => {
@@ -910,7 +1199,7 @@
         const tiles = kind === 'tiles';
         let o = this.svgOpen(-pad, -pad, cm(len) + 2 * pad, cm(H) + 2 * pad);
         o += '<polygon points="' + poly((y) => y) + '" fill="#fff" stroke="#222" stroke-width="2"/>';
-        const tw = this.wallTex.bw / 2, th = this.wallTex.bh / 2, e = tileStart(len, tw);
+        const tw = this.wallTex.bw / 2, th = this.wallTex.bh / 2, e = this.joints[wall].eu;
         if (s.wallH) {
           o += '<clipPath id="' + id + '"><polygon points="' + poly((y) => Math.min(y, s.wallH)) + '"/></clipPath>';
           o += '<g clip-path="url(#' + id + ')" stroke="' + (tiles ? '#b8955a' : '#e4dccf') + '" stroke-width="' + (tiles ? 0.8 : 0.5) + '">';
@@ -927,11 +1216,11 @@
           const yTop = Math.max.apply(null, (u.elev || [[0, 0, 0, 0.5]]).map((r) => r[3]));
           o += '<text x="' + X(c) + '" y="' + (Y(yTop) - 4) + '" font-size="9" text-anchor="middle" fill="#111">' + ITEM_NAMES[u.key] + '</text>';
           o += '<text x="' + X(c) + '" y="' + (Y(0) + 11) + '" font-size="7.5" text-anchor="middle" fill="#8a6a3a">Mitte ' + cmT(c) + '</text>';
-          if (!tiles) (u.conn || []).forEach((k) => { o += this.connMark(X(c + k.x), Y(k.y), k); });
+          if (!tiles) (u.conn || []).forEach((k) => { const ky = this.connY(k); o += this.connMark(X(c + k.x), Y(ky), Object.assign({}, k, { y: ky })); });
         });
         o += this.svgDim(0, Y(0) + 24, X(len), Y(0) + 24, fmtM(len));
         o += this.svgDim(-24, Y(0), -24, Y(H), fmtM(H), true);
-        if (tiles && s.wallH) o += '<text x="0" y="' + (Y(0) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(tw) + ' × ' + cmT(th) + ' cm · Randstück links und rechts ' + cmT(e < 0.001 ? tw : e) + ' cm' + (s.wallH < H - 0.01 ? ' · gefliest bis ' + fmtM(s.wallH) : '') + '</text>';
+        if (tiles && s.wallH) o += '<text x="0" y="' + (Y(0) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(this.wallTex.tw) + ' × ' + cmT(this.wallTex.th) + ' cm, Fuge 2 mm · Randstück links ' + cmT(this.joints[wall].edgeL) + ' cm, rechts ' + cmT(this.joints[wall].edgeR) + ' cm · ' + JOINT_TXT[this.joints[wall].status] + (s.wallH < H - 0.01 ? ' · gefliest bis ' + fmtM(s.wallH) : '') + '</text>';
         return o + '</svg>';
       }
       floorSVG(kind) {
@@ -950,6 +1239,7 @@
           o += '<line x1="' + ln[0] + '" y1="' + ln[1] + '" x2="' + ln[2] + '" y2="' + ln[3] + '" stroke="#8a6a3a" stroke-width="1.2" stroke-dasharray="8 5"/>';
           o += '<text x="' + (ln[0] + ln[2]) / 2 + '" y="' + ((ln[1] + ln[3]) / 2 - 4) + '" font-size="8" text-anchor="middle" fill="#8a6a3a">Dachschräge – volle Höhe ab hier · Kniestock ' + fmtM(sl.k) + '</text>';
         }
+        if (kind !== 'tiles') o += this.zonesSVG();
         this.items.forEach((it) => {
           it.updateMatrixWorld(true);
           const u = it.userData, w = u.w, d = u.d;
@@ -972,7 +1262,7 @@
         });
         o += this.svgDim(0, cm(s.b) + 24, cm(s.l), cm(s.b) + 24, fmtM(s.l));
         o += this.svgDim(-24, 0, -24, cm(s.b), fmtM(s.b), true);
-        if (tiles) o += '<text x="0" y="' + (cm(s.b) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(tw) + ' × ' + cmT(th) + ' cm · Randstücke ' + cmT(ex < 0.001 ? tw : ex) + ' cm (links/rechts) und ' + cmT(ez < 0.001 ? th : ez) + ' cm (vorne/hinten)</text>';
+        if (tiles) o += '<text x="0" y="' + (cm(s.b) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(ft.tw) + ' × ' + cmT(ft.th) + ' cm, Fuge 2 mm · Randstücke ' + cmT(ex < 0.001 ? tw : ex) + ' cm (links/rechts) und ' + cmT(ez < 0.001 ? th : ez) + ' cm (vorne/hinten)</text>';
         return o + '</svg>';
       }
       connRows() {
@@ -980,7 +1270,7 @@
         this.items.forEach((it) => {
           const u = it.userData, p = u.place, c = this.fromLeft(p);
           it.updateMatrixWorld(true);
-          (u.conn || []).forEach((k) => rows.push([ITEM_NAMES[u.key], k.t, k.n, p.dist < 0.05 ? WALL_NAMES[p.wall] : 'frei im Raum – nach Absprache', p.dist < 0.05 ? cmT(c + k.x) + ' cm ab linker Ecke' : '–', Math.round(k.y * 100) + ' cm']));
+          (u.conn || []).forEach((k) => rows.push([ITEM_NAMES[u.key], k.t, k.n, p.dist < 0.05 ? WALL_NAMES[p.wall] : 'frei im Raum – nach Absprache', p.dist < 0.05 ? cmT(c + k.x) + ' cm ab linker Ecke' : '–', cmT(this.connY(k)) + ' cm']));
           (u.floorConn || []).forEach((k) => {
             const q = new this.T.Vector3(k.x, 0, k.z).applyMatrix4(it.matrixWorld);
             rows.push([ITEM_NAMES[u.key], k.t, k.n, 'Boden', cmT(q.x) + ' cm ab linker Wand, ' + cmT(q.z) + ' cm ab Rückwand', 'Boden']);
@@ -1004,12 +1294,13 @@
         let h = '<div class="lc-print">';
         h += '<section>' + head('Badplanung') + '<h1>' + esc(meta.title) + '</h1><dl>' + meta.facts.map(([k, v]) => '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>').join('') + '</dl><img src="' + img + '" alt=""><h2>Grundriss</h2><div class="lc-print__floor">' + this.floorSVG('plan') + '</div></section>';
         h += '<section>' + head('Fliesenverlegeplan') + '<h2>Boden</h2><div class="lc-print__floor">' + this.floorSVG('tiles') + '</div>' + (walls.length ? '<h2>Wände</h2><div class="lc-print__walls">' + walls.map((w) => fig(w, 'tiles')).join('') + '</div>' : '') +
-          '<p class="lc-print__note">Symmetrische Verlegung mit gleichen Randstücken an beiden Enden, Fugenbreite nicht berücksichtigt. Planungshilfe – vor Ausführung am Bau prüfen.</p></section>';
+          '<h2>Fugen-Check</h2>' + this.checkList(this.checks().filter((c) => c.grp === 'fuge')) +
+          '<p class="lc-print__note">Boden symmetrisch verlegt, Wandfugen nach Möglichkeit in die Bodenfugen geführt, Fugenbreite 2 mm. Armaturen sitzen mittig auf einer Fuge oder mittig auf einer Fliese. Planungshilfe – vor Ausführung am Bau prüfen.</p></section>';
         if (rows.length) {
           h += '<section>' + head('Anschlussplan Sanitär, Heizung & Elektro') + legend + (walls.length ? '<div class="lc-print__walls">' + walls.map((w) => fig(w, 'conn')).join('') + '</div>' : '') +
-            '<h2>Boden</h2><div class="lc-print__floor lc-print__floor--small">' + this.floorSVG('conn') + '</div>' +
+            '<h2>Boden mit Schutzbereichen</h2><div class="lc-print__floor lc-print__floor--small">' + this.floorSVG('conn') + '</div>' + this.checkList(this.checks().filter((c) => c.grp === 'elek')) +
             '<table><thead><tr><th>Objekt</th><th>Art</th><th>Anschluss</th><th>Wand</th><th>Lage</th><th>Höhe</th></tr></thead><tbody>' + rows.map((r) => '<tr>' + r.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table>' +
-            '<p class="lc-print__note">Anschlusshöhen sind typische Richtwerte und ersetzen nicht die Montageanleitungen der Hersteller – vor der Rohinstallation mit dem gewählten Produkt abgleichen. Elektroarbeiten nur durch eine Elektrofachkraft, Schutzbereiche nach DIN VDE 0100-701 beachten.</p></section>';
+            '<p class="lc-print__note">Anschlusshöhen sind typische Richtwerte und ersetzen nicht die Montageanleitungen der Hersteller – vor der Rohinstallation mit dem gewählten Produkt abgleichen. Schutzbereiche nach DIN VDE 0100-701 (Ausgabe 2008-10): Bereich 1 über Wanne/Duschwanne bis 2,25 m, Bereich 2 weitere 0,60 m; bodengleiche Dusche nur Bereich 1 mit 1,20 m Radius um den Wasserauslass; bei Trennmauern zusätzlich 0,60 m Fadenmaß um die Mauer (nicht gezeichnet). Keine 230-V-Steckdosen in den Bereichen 0–2. Ausführung nur durch eine Elektrofachkraft.</p></section>';
         }
         h += '</div>';
         const wrap = document.createElement('div');
@@ -1623,6 +1914,11 @@
     .lc-print__note, .lc-print__legend { font-size: 9px; color: #555; }
     .lc-print__legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; vertical-align: -1px; }
     .lc-print__legend i.sq { border-radius: 0; }
+    .lc-print__checks { list-style: none; padding: 0; margin: 6px 0; font-size: 9.5px; display: grid; gap: 2px; }
+    .lc-print__checks li::before { display: inline-block; width: 12px; font-weight: 700; }
+    .lc-print__checks li.is-ok::before { content: "✓"; color: #2e7d32; }
+    .lc-print__checks li.is-warn::before { content: "!"; color: #b07800; }
+    .lc-print__checks li.is-bad::before { content: "✕"; color: #b3261e; }
     @page { size: A4; margin: 12mm; }
   }
   .lc-cfg__field[hidden] { display: none; }
@@ -1733,6 +2029,18 @@
   .lc-cfg__3d-bar .lc-cfg__3d-mode:hover { background: #b8955a; border-color: #b8955a; color: #111; }
   .lc-cfg__3d.is-2d .lc-cfg__3d-stage { cursor: default; }
   .lc-cfg__3d-note { margin: 0; padding: 0 10px 10px; background: #fff; font-size: 12px; color: #6f675c; }
+  .lc-cfg__3d-bar + .lc-cfg__3d-bar { border-top: 0; padding-top: 0; }
+  .lc-cfg__3d-bar .lc-cfg__3d-title { min-width: 64px; margin-right: 4px; }
+  .lc-cfg__3d-check { list-style: none; margin: 0; padding: 4px 10px 10px; background: #fff; font-size: 12.5px; display: grid; gap: 3px; }
+  .lc-cfg__3d-check:empty { display: none; }
+  .lc-cfg__3d-check li { padding-left: 20px; position: relative; color: #1c1b19; }
+  .lc-cfg__3d-check li::before { position: absolute; left: 0; top: 0; font-weight: 700; }
+  .lc-cfg__3d-check li.is-ok::before { content: "✓"; color: #2e7d32; }
+  .lc-cfg__3d-check li.is-warn::before { content: "!"; color: #b07800; left: 4px; }
+  .lc-cfg__3d-check li.is-bad::before { content: "✕"; color: #b3261e; }
+  .lc-cfg__3d-check li.is-bad { color: #8c1d18; }
+  .lc-cfg__3d-check .lc-cfg__3d-check-h { padding: 0; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; }
+  .lc-cfg__3d-check .lc-cfg__3d-check-h::before { content: none; }
   @media (max-width: 600px) {
     .lc-cfg__progress li { font-size: 9px; letter-spacing: .04em; }
     .lc-cfg__facts div { grid-template-columns: 1fr; gap: 2px; }
