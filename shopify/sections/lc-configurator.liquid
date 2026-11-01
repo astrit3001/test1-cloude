@@ -221,8 +221,8 @@
     const short = (c) => String(c).split(' – ')[0].replace(/^Fliesen in /, '').replace('Beton- & Zementoptik', 'Betonoptik');
     const range = (a, b) => (a === b ? EUR.format(a) : EUR.format(a) + ' – ' + EUR.format(b));
     const r100 = (v) => Math.round(v / 100) * 100;
-    const SAN_CATS = ['Waschtische', 'Badewannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Zubehör'];
-    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör' };
+    const SAN_CATS = ['Waschtische', 'Badewannen', 'Duschwannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Heizkörper', 'Zubehör'];
+    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör', Waschtische: 'Waschtische', Waschtisch: 'Waschtische', Duschwannen: 'Duschwannen', Duschwanne: 'Duschwannen', Heizpaneele: 'Heizkörper', 'Heizkörper': 'Heizkörper', 'Badzubehör': 'Zubehör' };
     const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
     const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche', m2_rest: '/m² Wand ohne Fliesen', m2_decke: '/m² Decke' };
     const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
@@ -302,13 +302,14 @@
         this.extra = { door: true, window: false };
         this.snapOn = true;
         this.wallMode = {};
+        this.tileOv = { back: {}, front: {}, left: {}, right: {} };
         this.editWalls = false;
         const wallsBtn = box.querySelector('[data-3d-walls]');
         wallsBtn?.addEventListener('click', () => {
           this.editWalls = !this.editWalls;
           wallsBtn.setAttribute('aria-pressed', this.editWalls);
           this.hint.hidden = false;
-          this.hint.textContent = this.editWalls ? 'Wand anklicken: raumhoch → halbhoch → nur Sockel → ohne Fliesen' : 'Ziehen zum Drehen';
+          this.hint.textContent = this.editWalls ? 'Fliese anklicken: entfernen oder wieder einsetzen' : 'Ziehen zum Drehen';
         });
         this.showZones = false;
         const zonesBtn = box.querySelector('[data-3d-zones]');
@@ -343,6 +344,7 @@
           this.active = null;
           this.autoNotes = null;
           this.wallMode = {};
+          this.tileOv = { back: {}, front: {}, left: {}, right: {} };
           if (this.state) { this.build(this.state); if (this.onLayout) this.onLayout(); }
           this.render();
         });
@@ -455,15 +457,7 @@
           } else if (this.editWalls && down && e && e.type === 'pointerup' && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 6) {
             this.ray.setFromCamera(this.ndc(e), this.camera);
             const hit = this.ray.intersectObjects(this.wallMeshes || [], false)[0];
-            if (hit) {
-              const w = hit.object.userData.wall, next = MODES[(MODES.indexOf(this.modeOf(w)) + 1) % MODES.length];
-              this.wallMode[w] = next;
-              this.build(this.state);
-              this.render();
-              this.hint.hidden = false;
-              this.hint.textContent = WALL_NAMES[w] + ': ' + MODE_NAMES[next] + (this.spans[w] && this.spans[w].length ? ' (Duschbereich bleibt raumhoch)' : '');
-              if (this.onLayout) this.onLayout();
-            }
+            if (hit) this.toggleTile(hit);
           }
           last = null; drag = null; down = null;
         };
@@ -698,6 +692,7 @@
             }
             if (top.some((e) => e[1] > e[2] + 0.001)) add(shape((e) => e[2], (e) => e[1]), paint);
           });
+          this.tileOverlays(g, paint);
           if (s.slope) {
             // Schräge Dachfläche, durchscheinend, damit man von außen hineinsehen kann
             const sl = s.slope, along = sl.side === 'back' || sl.side === 'front' ? s.l : s.b;
@@ -1190,6 +1185,83 @@
             '<text x="' + (x + w / 2) + '" y="' + (y + 14) + '" font-size="8" text-anchor="middle" fill="#6b4f22">' + (z.ac.key === 'akzent1' ? 'Akzent 1' : 'Akzent 2') + ': ' + PATTERN_NAMES[z.ac.pattern] + '</text>';
         }).join('');
       }
+      // ---------- Einzelne Fliesen entfernen / hinzufügen (Modus „Wandfliesen anpassen“) ----------
+      // Zelle im Fliesenraster der Wand: Spalte ab der ersten Fuge (eu), Reihe ab Fußboden
+      tileCell(wall, h, y) { const j = this.joints[wall]; return [Math.floor((h - j.eu) / this.wallTex.pw), Math.floor(y / this.wallTex.ph)]; }
+      cellRect(wall, col, row) {
+        const j = this.joints[wall], pw = this.wallTex.pw, ph = this.wallTex.ph, len = this.wallLen(wall);
+        const h0 = Math.max(0, j.eu + col * pw), h1 = Math.min(len, j.eu + (col + 1) * pw);
+        const y0 = row * ph, y1 = Math.min((row + 1) * ph, this.ceilAt(wall, h0), this.ceilAt(wall, h1), this.ceilAt(wall, (h0 + h1) / 2));
+        return h1 - h0 > 0.005 && y1 - y0 > 0.005 ? [h0, h1, y0, y1] : null;
+      }
+      // Anteil einer Zelle, der ohne Einzeländerung gefliest wäre (m²)
+      cellTiled(wall, r) {
+        const pr = this.wallProfile(wall), n = 8, w = r[1] - r[0];
+        let a = 0;
+        for (let i = 0; i < n; i++) { const h = r[0] + ((i + 0.5) * w) / n, e = pr.find((q) => q[0] >= h) || pr[pr.length - 1]; a += (Math.max(0, Math.min(e[2], r[3]) - r[2]) * w) / n; }
+        return a;
+      }
+      // Änderung der Fliesenfläche durch einzeln entfernte/hinzugefügte Platten
+      tileDelta() {
+        let d = 0;
+        Object.keys(this.tileOv).forEach((w) => Object.keys(this.tileOv[w]).forEach((k) => {
+          const [c, r] = k.split(',').map(Number), rc = this.cellRect(w, c, r);
+          if (!rc) return;
+          const t = this.cellTiled(w, rc);
+          d += this.tileOv[w][k] === 'off' ? -t : (rc[1] - rc[0]) * (rc[3] - rc[2]) - t;
+        }));
+        return d;
+      }
+      tileOverlays(g, paint) {
+        const T = this.T, s = this.size;
+        Object.keys(this.tileOv).forEach((w) => {
+          const def = wallDefs(s).find((x) => x[5] === w), len = this.wallLen(w), j = this.joints[w];
+          Object.keys(this.tileOv[w]).forEach((k) => {
+            const [c, r] = k.split(',').map(Number), rc = this.cellRect(w, c, r);
+            if (!rc) return;
+            const on = this.tileOv[w][k] === 'on', geo = new T.PlaneGeometry(rc[1] - rc[0], rc[3] - rc[2]);
+            if (on) {
+              const uv = geo.attributes.uv;
+              for (let i = 0; i < uv.count; i++) {
+                const h = rc[0] + uv.getX(i) * (rc[1] - rc[0]), y = rc[2] + uv.getY(i) * (rc[3] - rc[2]);
+                uv.setXY(i, (h - j.eu) / this.wallTex.bw, y / this.wallTex.bh);
+              }
+            }
+            const m = new T.Mesh(geo, on ? this.tiledMat(this.wallTex) : paint);
+            const grp = new T.Group();
+            grp.position.set(def[1], 0, def[2]);
+            grp.rotation.y = def[3];
+            m.position.set((rc[0] + rc[1]) / 2 - len / 2, (rc[2] + rc[3]) / 2, 0.002);
+            m.userData.wall = w;
+            grp.add(m);
+            g.add(grp);
+            this.wallMeshes.push(m);
+          });
+        });
+      }
+      ovSVG(wall, H) {
+        return Object.keys(this.tileOv[wall] || {}).map((k) => {
+          const [c, r] = k.split(',').map(Number), rc = this.cellRect(wall, c, r);
+          if (!rc) return '';
+          const on = this.tileOv[wall][k] === 'on';
+          return '<rect x="' + cm(rc[0]) + '" y="' + cm(H - rc[3]) + '" width="' + cm(rc[1] - rc[0]) + '" height="' + cm(rc[3] - rc[2]) + '" fill="' + (on ? '#efe6d6' : '#fff') + '" stroke="' + (on ? '#b8955a' : '#ddd') + '" stroke-width="0.8"/>';
+        }).join('');
+      }
+      // Klick im Modus „Wandfliesen anpassen“: Platte an dieser Stelle entfernen bzw. wieder einsetzen
+      toggleTile(hit) {
+        const w = hit.object.userData.wall, s = this.size, pt = hit.point;
+        const h = { back: pt.x, front: s.l - pt.x, left: s.b - pt.z, right: pt.z }[w], y = pt.y;
+        this.hint.hidden = false;
+        if ((this.spans[w] || []).some(([a, b]) => h >= a && h <= b)) { this.hint.textContent = 'Im Duschbereich bleiben alle Fliesen (Spritzwasser)'; return; }
+        if ((this.accentZones || []).some((z) => z.kind === 'wall' && z.wall === w && h >= z.h0 && h <= z.h1 && y <= z.top)) { this.hint.textContent = 'Hier liegt eine Akzentfliese – Bereich im Schritt „Fliesen“ ändern'; return; }
+        const [c, r] = this.tileCell(w, h, y), key = c + ',' + r, ov = this.tileOv[w];
+        if (ov[key]) delete ov[key];
+        else { const pr = this.wallProfile(w), e = pr.find((q) => q[0] >= h) || pr[pr.length - 1]; ov[key] = y < e[2] ? 'off' : 'on'; }
+        this.build(this.state);
+        this.render();
+        this.hint.textContent = WALL_NAMES[w] + ': Fliese ' + (ov[key] === 'off' ? 'entfernt' : ov[key] === 'on' ? 'hinzugefügt' : 'wieder wie vorher') + ' – nochmal klicken macht es rückgängig';
+        if (this.onLayout) this.onLayout();
+      }
       // ---------- Wandfliesen: Modus je Wand, Duschbereich immer raumhoch ----------
       modeOf(wall) { return this.wallMode[wall] || this.size.wallMode || 'full'; }
       // Weltachse (x bzw. z) -> Abstand ab linker Ecke vom Raum aus gesehen
@@ -1238,6 +1310,7 @@
             a -= (Math.max(0, Math.min(e[2], y1) - y0) * (x1 - x0)) / n;
           }
         });
+        a += this.tileDelta();
         return Math.max(0, a);
       }
       // Wandflächen ohne Fliesen (für Maler) und Deckenfläche – bei Dachschräge mit der echten Schrägfläche
@@ -1264,12 +1337,16 @@
           const de = Math.min(sl.d, room), ye = sl.k + ((s.h - sl.k) * de) / Math.max(0.01, sl.d);
           ceil += along * (Math.hypot(de, ye - sl.k) - de);
         }
+        wall -= this.tileDelta();
         return { wall: Math.max(0, wall), ceil };
       }
       wallText() {
         if (!this.size || !this.size.h || !this.spans) return '';
         const parts = ['back', 'right', 'front', 'left'].map((w) => WALL_NAMES[w] + ' ' + MODE_NAMES[this.modeOf(w)]);
-        return parts.join(', ') + (Object.values(this.spans).some((x) => x.length) ? '; Duschbereich raumhoch' : '');
+        const ov = Object.values(this.tileOv).flatMap((o) => Object.values(o));
+        const off = ov.filter((v) => v === 'off').length, on = ov.length - off;
+        return parts.join(', ') + (Object.values(this.spans).some((x) => x.length) ? '; Duschbereich raumhoch' : '') +
+          (off ? '; ' + off + ' Fliese(n) einzeln weggelassen' : '') + (on ? '; ' + on + ' Fliese(n) einzeln ergänzt' : '');
       }
       // Objekt so setzen, dass seine Armatur auf dem bodenbündigen Raster mittig auf Fuge oder Fliese sitzt
       snapPos(o, wall, pos) {
@@ -1538,7 +1615,7 @@
           for (let y = th; y < maxT - 0.001; y += th) o += '<line x1="0" y1="' + Y(y) + '" x2="' + X(len) + '" y2="' + Y(y) + '"/>';
           o += '</g>';
         }
-        if (tiles) o += this.accentSVG(wall);
+        if (tiles) o += this.ovSVG(wall, H) + this.accentSVG(wall);
         this.onWall(wall).forEach((it) => {
           const u = it.userData, c = this.fromLeft(u.place);
           (u.elev || []).forEach(([x0, x1, y0, y1]) => {
@@ -2060,17 +2137,19 @@
         if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc), dusch: /Dusch-WC/.test(wc) });
         L('WC-Extras').forEach((t) => { if (/Bidet/.test(t)) out.push({ key: 'bidet' }); if (/Urinal/.test(t)) out.push({ key: 'urinal' }); });
         const dusche = L('Dusche');
-        if (dusche.length || !decided) {
-          const size = (L('Duschgröße')[0] || '').match(/(\d+)\s*×\s*(\d+)/);
+        const trayP = prod(['Duschwannen']);
+        if (dusche.length || trayP || !decided) {
+          const pm = trayP.match(/(\d{2,3})\s*[x×]\s*(\d{2,3})/);
+          const size = pm ? [0, Math.max(+pm[1], +pm[2]), Math.min(+pm[1], +pm[2])] : (L('Duschgröße')[0] || '').match(/(\d+)\s*×\s*(\d+)/);
           out.push({
             key: 'shower', w: size ? +size[1] / 100 : 0.9, d: size ? +size[2] / 100 : 0.9,
-            tray: dusche.some((t) => /Duschwanne/.test(t)) && !dusche.some((t) => /Bodengleich/.test(t)),
+            tray: !!trayP || (dusche.some((t) => /Duschwanne/.test(t)) && !dusche.some((t) => /Bodengleich/.test(t))),
             drain: L('Duschablauf')[0] || '', head: L('Duschbrause')[0] || '', glass: L('Duschabtrennung')[0] || '', extras: L('Dusch-Extras'),
             niches: /Trennmauer/.test(L('Duschabtrennung')[0] || '') ? +(((L('Nischen in der Trennmauer')[0] || '').match(/\d+/) || [0])[0]) : 0,
           });
         }
         const tubP = prod(['Badewannen']);
-        const wanne = tubP ? (/freistehend/i.test(tubP) ? 'Freistehende Badewanne' : /whirl/i.test(tubP) ? 'Whirlpool-Wanne' : 'Einbauwanne') : L('Badewanne')[0] || '';
+        const wanne = tubP ? (/freistehend|freestanding|exent/i.test(tubP) ? 'Freistehende Badewanne' : /whirl/i.test(tubP) ? 'Whirlpool-Wanne' : 'Einbauwanne') : L('Badewanne')[0] || '';
         const tm = tubP.match(/(\d{3})\s*[x×]\s*(\d{2,3})/);
         if (wanne) out.push({ key: 'tub', type: /Freistehend/.test(wanne) ? 'free' : /Whirlpool/.test(wanne) ? 'whirl' : 'built', len: tm ? +tm[1] / 100 : 0, dep: tm ? +tm[2] / 100 : 0 });
         const wp = L('Waschplatz')[0] || '';
@@ -2081,11 +2160,11 @@
         if (wp || vq || !decided) out.push({
           key: 'vanity', w: vw >= 0.4 && vw <= 2.4 ? vw : 0,
           double: vP ? /doppel|2 becken|zwei becken/i.test(vP) || vw >= 1.2 : /Doppel/.test(wp) || sanQ('Waschtische') >= 2,
-          stand: /stehend|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
+          stand: /stehend|standwasch|de pie|freestanding|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
           color: /eiche|holz|nuss|teak|natur/i.test(vP) ? 'wood' : /schwarz|black/i.test(vP) ? 'black' : /grau|anthrazit|grey/i.test(vP) ? 'grey' : /weiß|weiss|white/i.test(vP) ? 'white' : vP ? 'white' : 'wood',
           led: licht.some((t) => /LED/.test(t)),
         });
-        if (licht.some((t) => /Handtuch/.test(t))) out.push({ key: 'radiator' });
+        if (licht.some((t) => /Handtuch/.test(t)) || prod(['Heizkörper'])) out.push({ key: 'radiator' });
         if (licht.some((t) => /Lüfter/.test(t))) out.push({ key: 'fan' });
         return out;
       }
@@ -2188,7 +2267,7 @@
           return '<div class="lc-cfg__prod lc-cfg__prod--san' + (s ? ' is-selected' : '') + '">' +
             '<span class="lc-cfg__prod-img">' + (p.img ? '<img loading="lazy" src="' + p.img + '" alt="">' : '') + '</span>' +
             '<span class="lc-cfg__prod-v">' + esc(this.sanCat(p)) + '</span><span class="lc-cfg__prod-t">' + esc(p.t) + '</span>' +
-            '<span class="lc-cfg__prod-p">' + (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) + '</span>' + (s ? opts : '') +
+            '<span class="lc-cfg__prod-p">' + (min > 0 ? (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) : 'Preis auf Anfrage') + '</span>' + (s ? opts : '') +
             '<span class="lc-cfg__qty">' + (s ? '<button type="button" data-q="-1" data-id="' + p.id + '">−</button><b>' + s.q + '</b><button type="button" data-q="1" data-id="' + p.id + '">+</button>' : '<button type="button" class="lc-cfg__add" data-q="1" data-id="' + p.id + '">Hinzufügen</button>') + '</span></div>';
         }).join('');
         grid.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
@@ -2203,7 +2282,10 @@
       }
       summary() {
         const a = this.areas();
-        const lines = this.lines();
+        // Produkte ohne Preis (Preis auf Anfrage) sind Eventualpositionen: sichtbar, aber nicht in der Summe
+        const all = this.lines();
+        const evt = all.filter((l) => !l.price && l.qty);
+        const lines = all.filter((l) => evt.indexOf(l) < 0);
         const total = this.total();
         const est = this.estimate();
         const leistung = (this.$('input[name="lc-leistung"]:checked') || {}).value || '';
@@ -2224,6 +2306,11 @@
             est.sv.map((s) => '<tr><td>' + esc(s.label) + '<br><small>' + esc(s.detail) + '</small></td><td>ca. ' + EUR.format(Math.round(s.sum)) + '</td></tr>').join('') +
             '</tbody><tfoot><tr><td>Arbeitsleistungen & Ausstattung</td><td>ca. ' + EUR.format(Math.round(est.svSum)) + '</td></tr></tfoot></table>';
         }
+        if (evt.length) {
+          html += '<h4>Eventualpositionen – Preis folgt im Angebot</h4><table class="lc-cfg__table lc-cfg__table--sv"><tbody>' +
+            evt.map((l) => '<tr><td><small>' + l.label + '</small>' + esc(l.title) + (l.vt ? '<br><small>' + esc(l.vt) + '</small>' : '') + '</td><td>' + l.qty + (l.area ? ' m²' : ' Stk') + ' · Preis auf Anfrage</td></tr>').join('') +
+            '</tbody></table><p class="lc-cfg__sub">Diese Produkte sind in der Schätzung noch nicht enthalten und werden im Angebot ergänzt.</p>';
+        }
         html += '<p class="lc-cfg__note">Die Gesamtschätzung enthält ' + this.cfg.spread + ' % Spielraum. Fliesenmengen inkl. ca. 10 % Verschnitt. XXL-Platten zzgl. Spezialtransport. Ausstattungspreise sind Richtwerte inkl. Montage und Standard-Material.</p>';
         this.$('[data-summary]').innerHTML = html;
         const svText = est.sv.map((s) => '- ' + s.label + ' (' + s.detail + '): ca. ' + EUR.format(Math.round(s.sum))).join('\n');
@@ -2233,6 +2320,7 @@
           (sl ? '\nDachschräge: ' + { back: 'hinten', front: 'vorne', left: 'links', right: 'rechts' }[sl.side] + ', Kniestock ' + fmtM(sl.k) + ', reicht ' + fmtM(sl.d) + ' in den Raum' : '') +
           '\nLeistung: ' + leistung + '\n' +
           (lines.length ? 'Material:\n' + lines.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + (l.area ? ', ' + l.qty + ' m²' : (l.qty ? ', ' + l.qty + ' Stk' : '')) + (l.sum ? ' = ' + EUR2.format(l.sum / 100) : '')).join('\n') + '\n' : '') +
+          (evt.length ? 'Eventualpositionen (Preis folgt im Angebot):\n' + evt.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + ', ' + l.qty + (l.area ? ' m²' : ' Stk')).join('\n') + '\n' : '') +
           (svText ? 'Ausstattung & Leistungen:\n' + svText + '\n' : '') +
           (this.room3d && this.isBath() && this.room3d.wallText() ? 'Wandfliesen: ' + this.room3d.wallText() + '\n' : '') +
           (layout.length ? 'Aufteilung laut 3D-Vorschau:\n' + layout.map((t) => '- ' + t).join('\n') + '\n' : '') +
@@ -2244,7 +2332,7 @@
         this.$('[data-cart]').hidden = !lines.some((l) => l.qty > 0);
       }
       async addToCart() {
-        const items = this.lines().filter((l) => l.qty > 0).map((l) => ({ id: l.vid, quantity: l.qty }));
+        const items = this.lines().filter((l) => l.qty > 0 && l.price > 0).map((l) => ({ id: l.vid, quantity: l.qty }));
         if (!items.length) return;
         const btn = this.$('[data-cart]');
         btn.disabled = true; btn.textContent = 'Wird hinzugefügt …';

@@ -13,6 +13,11 @@
     {%- if s.title != blank -%}<div class="lc-heading"><h2>{{ s.title }}</h2></div>{%- endif -%}
     {%- if s.intro != blank -%}<p class="lc-vis__intro">{{ s.intro }}</p>{%- endif -%}
 
+    {%- comment -%}
+      Shopify führt Section-Skripte nur für Sections aus, die auf der Seite stehen (data-sections am Skript-Bündel).
+      Die 3D-Technik steckt im Skript des Badplaners – daher hier freischalten, bevor das Bündel (defer) läuft.
+    {%- endcomment -%}
+    <script>(function () { var s = document.getElementById('sections-script'); if (!s) return; var a = s.getAttribute('data-sections') || ''; if ((',' + a + ',').indexOf(',lc-configurator,') < 0) s.setAttribute('data-sections', a + (a ? ',' : '') + 'lc-configurator'); })();</script>
     <lc-visualizer class="lc-vis" data-wa="{{ wa }}" data-planner="{{ s.planner_url | default: '/' }}">
       {%- comment -%} Jede Fliese in einem eigenen Block: ein fehlerhaftes Produkt legt nicht die ganze Auswahl lahm {%- endcomment -%}
       {%- for i in (1..6) -%}
@@ -40,6 +45,10 @@
               <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
               <button type="button" data-3d-mode>2D-Grundriss</button>
               <button type="button" data-3d-save>Als Bild speichern</button>
+            </div>
+            <div hidden>{%- comment -%} von älteren Badplaner-Versionen erwartet {%- endcomment -%}
+              <button type="button" data-3d-move></button><button type="button" data-3d-walls></button><button type="button" data-3d-zones></button><button type="button" data-3d-auto></button>
+              <button type="button" data-3d-snap></button><button type="button" data-3d-print></button><button type="button" data-3d-dims></button><button type="button" data-3d-reset></button>
             </div>
           </div>
           <ul class="lc-vis__sum" data-sum></ul>
@@ -102,7 +111,7 @@
               </label>
               <button type="button" class="lc-vis__link" data-accent-off>Akzentfläche entfernen</button>
             </div>
-            <div class="lc-vis__opts">
+            <div class="lc-vis__opts" data-grout-wrap>
               <span>Fugenfarbe</span>
               <div class="lc-vis__grout" data-grout>
                 <button type="button" data-v="" class="is-on" title="automatisch">auto</button>
@@ -146,12 +155,29 @@
       { key: 'vanity', w: 0, double: false, stand: false, color: 'wood', led: false },
     ];
     const SURF = { floor: 'für den Boden', wall: 'für die Wände', accent: 'für die Akzentfläche' };
-    const SURF_SHORT = { floor: 'Boden', wall: 'Wände', accent: 'Akzentfläche' };
-    // LcRoom3D kommt aus dem Badplaner-Skript; Shopify lädt die Section-Skripte gebündelt, die Reihenfolge ist offen
+    // LcRoom3D kommt aus dem Badplaner-Skript; Shopify lädt die Section-Skripte gebündelt, die Reihenfolge ist offen.
+    // Ältere Badplaner-Versionen geben die Klasse nicht frei: dann ein unsichtbares Badplaner-Element anlegen
+    // und die Klasse von dessen 3D-Vorschau übernehmen (ohne Fugenfarbe).
+    const probe = () => {
+      const el = document.createElement('lc-configurator');
+      el.hidden = true;
+      el.innerHTML = '<script type="text/plain" data-options></' + 'script><script type="application/json" data-sanitary>[]</' + 'script><div data-accent></div>' +
+        '<div data-3d><div data-3d-stage></div><span data-3d-hint></span>' + ['mode', 'move', 'walls', 'zones', 'auto', 'snap', 'print', 'dims', 'reset', 'save'].map((k) => '<button data-3d-' + k + '></button>').join('') + '</div>';
+      // Der Rest des Badplaners findet seine Bedienelemente nicht und bricht ab – diese Meldung unterdrücken
+      const quiet = (e) => e.preventDefault();
+      window.addEventListener('error', quiet);
+      try { document.body.appendChild(el); } finally { window.removeEventListener('error', quiet); }
+      const R = el.room3d && el.room3d.constructor;
+      el.remove();
+      return R;
+    };
     const room3d = () => new Promise((res, rej) => {
       if (window.LcRoom3D) return res(window.LcRoom3D);
-      const t = setTimeout(() => rej(new Error('no-3d')), 8000);
-      document.addEventListener('lc:room3d-ready', () => { clearTimeout(t); res(window.LcRoom3D); }, { once: true });
+      let done = false;
+      const ok = (R, legacy) => { if (done) return; done = true; if (R) { R.legacy = !!legacy; res(R); } else rej(new Error('no-3d')); };
+      document.addEventListener('lc:room3d-ready', () => ok(window.LcRoom3D), { once: true });
+      customElements.whenDefined('lc-configurator').then(() => setTimeout(() => ok(window.LcRoom3D || probe(), !window.LcRoom3D), 0));
+      setTimeout(() => ok(null), 8000);
     });
 
     customElements.define('lc-visualizer', class extends HTMLElement {
@@ -210,6 +236,7 @@
         this.renderOptics();
         this.refresh();
         room3d().then((Room) => {
+          if (Room.legacy) this.$('[data-grout-wrap]').hidden = true;
           this.room = new Room(this.$('[data-3d]'));
           this.room.showDims = false;
           this.room.extra = { door: true, window: true };
@@ -281,7 +308,7 @@
         const list = this.tiles.filter((t) => !s.optic || t.c === s.optic);
         this.$('[data-tiles]').innerHTML = list.length ? list.map((t) =>
           '<button type="button" class="lc-vis__tile' + (cur && cur.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
-          '<img src="' + esc(t.img || '') + '" alt="" loading="lazy" width="200" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('')
+          '<img src="' + esc(t.tx || t.img || '') + '" alt="" loading="lazy" width="200" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('')
           : '<p class="lc-vis__empty">Bitte im Theme-Editor Kollektionen für den Visualizer wählen.</p>';
       }
       chosen() {
