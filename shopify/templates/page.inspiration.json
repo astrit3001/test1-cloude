@@ -1,0 +1,25 @@
+{
+  "sections": {
+    "inspiration": {
+      "type": "lc-inspiration",
+      "blocks": {
+        "baeder": { "type": "tab", "settings": { "label": "Bäder", "collection": "fliesen-marmoroptik", "limit": 24 } },
+        "wohnen": { "type": "tab", "settings": { "label": "Wohnen", "collection": "fliesen-holzoptik", "limit": 24 } },
+        "stein": { "type": "tab", "settings": { "label": "Stein & Beton", "collection": "fliesen-steinoptik", "limit": 24 } },
+        "xxl": { "type": "tab", "settings": { "label": "Großformat", "collection": "fliesen-grossformat", "limit": 24 } },
+        "outdoor": { "type": "tab", "settings": { "label": "Outdoor", "collection": "terrassenplatten-2-cm-20-mm-outdoor-feinsteinzeug", "limit": 24 } },
+        "mosaik": { "type": "tab", "settings": { "label": "Mosaik", "collection": "mosaike", "limit": 24 } }
+      },
+      "block_order": ["baeder", "wohnen", "stein", "xxl", "outdoor", "mosaik"],
+      "settings": {
+        "title": "Inspiration",
+        "intro": "Lassen Sie sich von fertigen Räumen inspirieren – Bild anklicken, Fliese ansehen und direkt im Badplaner ausprobieren.",
+        "whatsapp": "4917662596394",
+        "planner_url": "/",
+        "padding_top": 32,
+        "padding_bottom": 40
+      }
+    }
+  },
+  "order": ["inspiration"]
+}

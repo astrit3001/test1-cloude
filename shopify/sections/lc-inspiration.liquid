@@ -1,0 +1,182 @@
+{%- liquid
+  assign s = section.settings
+  assign wa = s.whatsapp | remove: '+' | remove: ' '
+-%}
+<section class="lc-section lc-insp" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
+  <div class="lc-wrap">
+    {%- if s.title != blank -%}<div class="lc-heading"><h2>{{ s.title }}</h2></div>{%- endif -%}
+    {%- if s.intro != blank -%}<p class="lc-insp__intro">{{ s.intro }}</p>{%- endif -%}
+
+    <lc-inspiration class="lc-insp__app" data-wa="{{ wa }}" data-planner="{{ s.planner_url | default: '/' }}">
+      <div class="lc-insp__tabs" role="tablist">
+        {%- for block in section.blocks -%}
+          <button type="button" role="tab" class="lc-insp__tab{% if forloop.first %} is-active{% endif %}" data-tab="{{ forloop.index0 }}" {{ block.shopify_attributes }}>{{ block.settings.label }}</button>
+        {%- endfor -%}
+      </div>
+
+      {%- for block in section.blocks -%}
+        {%- assign col = block.settings.collection -%}
+        <div class="lc-insp__grid" data-panel="{{ forloop.index0 }}"{% unless forloop.first %} hidden{% endunless %}>
+          {%- if col != blank -%}
+            {%- for p in col.products limit: block.settings.limit -%}
+              {%- if p.featured_image -%}
+                {%- liquid
+                  assign title = p.title | split: ' – Preis' | first | split: ' - Preis' | first
+                  assign formats = ''
+                  for v in p.variants
+                    assign f = v.title | split: ' / ' | first
+                    if f contains 'cm'
+                      unless formats contains f
+                        assign formats = formats | append: f | append: '|'
+                      endunless
+                    endif
+                  endfor
+                  assign thumbs = ''
+                  for im in p.images limit: 8
+                    unless im.src contains 'anwendung'
+                      assign t = im | image_url: width: 200
+                      assign thumbs = thumbs | append: t | append: '|'
+                    endunless
+                  endfor
+                -%}
+                <button type="button" class="lc-insp__card" data-item
+                  data-title="{{ title | escape }}" data-vendor="{{ p.vendor | escape }}" data-url="{{ p.url }}" data-id="{{ p.id }}"
+                  data-img="{{ p.featured_image | image_url: width: 1600 }}" data-price="{{ p.price_min | money }}" data-varies="{{ p.price_varies }}"
+                  data-formats="{{ formats | escape }}" data-thumbs="{{ thumbs | escape }}" data-colors="{{ p.variants.size }}">
+                  {{ p.featured_image | image_url: width: 700 | image_tag: loading: 'lazy', alt: title, sizes: '(max-width: 749px) 50vw, 25vw', widths: '400, 700' }}
+                  <span class="lc-insp__cap"><em>{{ p.vendor }}</em><strong>{{ title }}</strong></span>
+                </button>
+              {%- endif -%}
+            {%- endfor -%}
+          {%- else -%}
+            <p class="lc-insp__empty">Bitte im Theme-Editor eine Kollektion für „{{ block.settings.label }}“ wählen.</p>
+          {%- endif -%}
+        </div>
+      {%- endfor -%}
+
+      <div class="lc-insp__modal" data-modal hidden>
+        <div class="lc-insp__box" role="dialog" aria-modal="true">
+          <button type="button" class="lc-insp__close" data-close aria-label="Schließen">×</button>
+          <div class="lc-insp__media"><img data-m-img alt=""></div>
+          <div class="lc-insp__info">
+            <em data-m-vendor></em>
+            <h3 data-m-title></h3>
+            <p class="lc-insp__price" data-m-price></p>
+            <p class="lc-insp__formats" data-m-formats></p>
+            <div class="lc-insp__thumbs" data-m-thumbs></div>
+            <div class="lc-insp__actions">
+              <a class="lc-btn" data-m-url href="#">Zum Produkt</a>
+              <a class="lc-btn lc-btn--light" data-m-plan href="#">Im Badplaner ausprobieren</a>
+              {%- if wa != blank -%}<a class="lc-btn lc-insp__wa" data-m-wa href="#" target="_blank" rel="noopener">Beratung per WhatsApp</a>{%- endif -%}
+            </div>
+          </div>
+        </div>
+      </div>
+    </lc-inspiration>
+  </div>
+</section>
+
+{% javascript %}
+  if (!customElements.get('lc-inspiration')) {
+    customElements.define('lc-inspiration', class extends HTMLElement {
+      connectedCallback() {
+        this.$ = (q) => this.querySelector(q);
+        this.modal = this.$('[data-modal]');
+        this.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+          this.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('is-active', x === b));
+          this.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== b.dataset.tab; });
+        }));
+        this.querySelectorAll('[data-item]').forEach((c) => c.addEventListener('click', () => this.open(c.dataset)));
+        this.modal.addEventListener('click', (e) => { if (e.target === this.modal || e.target.closest('[data-close]')) this.close(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !this.modal.hidden) this.close(); });
+      }
+      open(d) {
+        const list = (t) => String(t || '').split('|').filter(Boolean);
+        this.$('[data-m-img]').src = d.img;
+        this.$('[data-m-img]').alt = d.title;
+        this.$('[data-m-vendor]').textContent = d.vendor;
+        this.$('[data-m-title]').textContent = d.title;
+        this.$('[data-m-price]').textContent = d.price ? (d.varies === 'true' ? 'ab ' : '') + d.price : '';
+        const f = list(d.formats);
+        this.$('[data-m-formats]').textContent = f.length ? 'Formate: ' + f.join(' · ') : '';
+        const th = list(d.thumbs);
+        const box = this.$('[data-m-thumbs]');
+        box.innerHTML = '';
+        th.forEach((u) => { const i = document.createElement('img'); i.src = u; i.alt = ''; i.loading = 'lazy'; box.appendChild(i); });
+        if (+d.colors > 1) { const s = document.createElement('span'); s.textContent = d.colors + ' Varianten'; box.appendChild(s); }
+        this.$('[data-m-url]').href = d.url;
+        this.$('[data-m-plan]').href = this.dataset.planner + (this.dataset.planner.indexOf('?') > -1 ? '&' : '?') + 'lc_fliese=' + d.id + '#konfigurator-bad';
+        const wa = this.$('[data-m-wa]');
+        if (wa) wa.href = 'https://wa.me/' + this.dataset.wa + '?text=' + encodeURIComponent('Guten Tag, ich interessiere mich für ' + d.title + ' (' + location.origin + d.url + ').');
+        this.modal.hidden = false;
+        document.documentElement.style.overflow = 'hidden';
+      }
+      close() {
+        this.modal.hidden = true;
+        document.documentElement.style.overflow = '';
+      }
+    });
+  }
+{% endjavascript %}
+
+{% stylesheet %}
+  .lc-insp__intro { text-align: center; max-width: 720px; margin: -10px auto 24px; color: #6f675c; font-size: 15px; line-height: 1.6; }
+  .lc-insp__tabs { display: flex; flex-wrap: wrap; gap: 10px; padding: 18px; background: #f1efec; margin-bottom: 28px; }
+  .lc-insp__tab { border: 1px solid transparent; background: #e3e0db; color: #1c1b19; padding: 12px 22px; font-size: 16px; cursor: pointer; font-family: inherit; }
+  .lc-insp__tab:hover { background: #d8d3cb; }
+  .lc-insp__tab.is-active { background: #c9c4bc; border-color: #8f8a83; }
+  .lc-insp__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .lc-insp__grid[hidden] { display: none; }
+  @media (max-width: 989px) { .lc-insp__grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 749px) { .lc-insp__grid { grid-template-columns: repeat(2, 1fr); gap: 10px; } .lc-insp__tab { padding: 9px 14px; font-size: 14px; } }
+  .lc-insp__card { position: relative; display: block; padding: 0; border: 1px solid #e4dccf; background: #f7f4ef; cursor: pointer; aspect-ratio: 4 / 3; overflow: hidden; font-family: inherit; text-align: left; }
+  .lc-insp__card img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s; }
+  .lc-insp__card:hover img { transform: scale(1.04); }
+  .lc-insp__cap { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 2px; padding: 26px 12px 10px; color: #fff; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); }
+  .lc-insp__cap em { font-style: normal; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: #e5d3b0; }
+  .lc-insp__cap strong { font-weight: 500; font-size: 14px; line-height: 1.25; }
+  .lc-insp__empty { grid-column: 1 / -1; color: #6f675c; }
+  .lc-insp__modal { position: fixed; inset: 0; z-index: 1000; background: rgba(17,17,17,.78); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .lc-insp__modal[hidden] { display: none; }
+  .lc-insp__box { position: relative; background: #fff; max-width: 1180px; width: 100%; max-height: calc(100vh - 32px); overflow: auto; display: grid; grid-template-columns: 1.7fr 1fr; }
+  @media (max-width: 849px) { .lc-insp__box { grid-template-columns: 1fr; } }
+  .lc-insp__media img { width: 100%; height: 100%; max-height: 80vh; object-fit: cover; display: block; }
+  .lc-insp__info { padding: 26px 24px; display: flex; flex-direction: column; gap: 8px; }
+  .lc-insp__info em { font-style: normal; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; }
+  .lc-insp__info h3 { margin: 0; font-size: 24px; line-height: 1.2; }
+  .lc-insp__price { margin: 0; font-weight: 600; font-size: 17px; }
+  .lc-insp__formats { margin: 0; color: #6f675c; font-size: 14px; }
+  .lc-insp__thumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+  .lc-insp__thumbs img { width: 52px; height: 52px; object-fit: cover; border: 1px solid #e4dccf; }
+  .lc-insp__thumbs span { font-size: 12px; color: #6f675c; margin-left: 4px; }
+  .lc-insp__actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 12px; }
+  .lc-insp__actions .lc-btn { text-align: center; }
+  .lc-insp__wa { background: #1f7a4d !important; border-color: #1f7a4d !important; color: #fff !important; }
+  .lc-insp__close { position: absolute; top: 8px; right: 10px; z-index: 2; width: 38px; height: 38px; border: 0; background: rgba(255,255,255,.92); font-size: 24px; cursor: pointer; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "LC Inspiration",
+  "settings": [
+    { "type": "text", "id": "title", "label": "Überschrift", "default": "Inspiration" },
+    { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Lassen Sie sich von fertigen Räumen inspirieren – Bild anklicken, Fliese ansehen und direkt im Badplaner ausprobieren." },
+    { "type": "text", "id": "whatsapp", "label": "WhatsApp-Nummer (international)", "default": "4917662596394" },
+    { "type": "text", "id": "planner_url", "label": "Seite mit dem Badplaner", "default": "/" },
+    { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 32 },
+    { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 40 }
+  ],
+  "blocks": [
+    {
+      "type": "tab",
+      "name": "Rubrik",
+      "settings": [
+        { "type": "text", "id": "label", "label": "Name der Rubrik", "default": "Bäder" },
+        { "type": "collection", "id": "collection", "label": "Kollektion (Anwendungsbilder = Hauptbild der Produkte)" },
+        { "type": "range", "id": "limit", "label": "Anzahl Bilder", "min": 4, "max": 48, "step": 4, "default": 24 }
+      ]
+    }
+  ],
+  "presets": [{ "name": "LC Inspiration", "blocks": [{ "type": "tab", "settings": { "label": "Bäder" } }, { "type": "tab", "settings": { "label": "Wohnen" } }, { "type": "tab", "settings": { "label": "Outdoor" } }, { "type": "tab", "settings": { "label": "Mosaik" } }] }]
+}
+{% endschema %}

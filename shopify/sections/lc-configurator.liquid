@@ -1747,6 +1747,17 @@
           if (r) { r.checked = true; this.onProject(); this.go(0, true); this.update(); }
         };
         if (location.hash.indexOf('#konfigurator-') === 0) setTimeout(() => pick(location.hash.slice(14)), 400);
+        // Aus der Inspirationsseite: ?lc_fliese=<Produkt-ID> wählt die Fliese als Bodenfliese vor (Wand übernimmt sie)
+        const pre = new URLSearchParams(location.search).get('lc_fliese');
+        if (pre) setTimeout(() => {
+          const p = this.tiles.find((x) => String(x.id) === pre);
+          if (!p) return;
+          const v = p.vs.find((vv) => vv.ok) || p.vs[0];
+          this.sel.boden = { p, vid: v.id };
+          this.slot = 'wand';
+          this.renderTiles();
+          this.update();
+        }, 600);
         window.addEventListener('hashchange', () => { if (location.hash.indexOf('#konfigurator-') === 0) pick(location.hash.slice(14)); });
       }
       readJSON(q) { try { return JSON.parse(this.$(q).textContent); } catch (e) { return []; } }
