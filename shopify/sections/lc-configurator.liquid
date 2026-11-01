@@ -57,6 +57,8 @@
             <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
             <button type="button" class="lc-cfg__3d-mode" data-3d-mode>2D-Grundriss</button>
             <button type="button" data-3d-dims aria-pressed="true">Maße</button>
+            <button type="button" data-3d-extra="door" aria-pressed="true">Tür</button>
+            <button type="button" data-3d-extra="window" aria-pressed="false">Fenster</button>
             <button type="button" data-3d-move aria-pressed="false">Objekte verschieben</button>
             <button type="button" data-3d-reset>Zurücksetzen</button>
             <button type="button" data-3d-save>Als Bild speichern</button>
@@ -103,6 +105,13 @@
             <label class="lc-cfg__field"><span>Wandfliesen</span>
               <select data-m="wall"><option value="full">raumhoch</option><option value="half">halbhoch (1,20 m)</option><option value="none">keine Wandfliesen</option></select>
             </label>
+          </div>
+          <div class="lc-cfg__row lc-cfg__row--4 lc-cfg__row--slope">
+            <label class="lc-cfg__field"><span>Dachschräge (Seite wie in der 3D-Ansicht)</span>
+              <select data-m="slope"><option value="">keine Dachschräge</option><option value="back">ja – hinten</option><option value="front">ja – vorne</option><option value="left">ja – links</option><option value="right">ja – rechts</option></select>
+            </label>
+            <label class="lc-cfg__field" data-slope-only hidden><span>Kniestock – Wandhöhe an der Schräge (m)</span><input type="number" min="0" step="0.05" inputmode="decimal" value="1.00" data-m="knee"></label>
+            <label class="lc-cfg__field" data-slope-only hidden><span>Schräge reicht in den Raum (m)</span><input type="number" min="0.2" step="0.05" inputmode="decimal" value="1.50" data-m="sdepth"></label>
           </div>
         </div>
         <div data-area-only>
@@ -217,9 +226,30 @@
     // 3D-Raum (Puppenhaus-Ansicht): Wände zeigen nach innen und werden von außen ausgeblendet,
     // Fliesen werden als 2×2-Block (gespiegelt, gegen sichtbare Wiederholung) im echten Format gekachelt.
     // Sanitärobjekte hängen an einer Wand (wall + pos = Mitte entlang der Wand) und lassen sich verschieben.
-    const ITEM_NAMES = { wc: 'WC', bidet: 'Bidet', urinal: 'Urinal', shower: 'Dusche', tub: 'Badewanne', vanity: 'Waschtisch', radiator: 'Handtuchheizkörper', fan: 'Lüfter' };
+    const ITEM_NAMES = { wc: 'WC', bidet: 'Bidet', urinal: 'Urinal', shower: 'Dusche', tub: 'Badewanne', vanity: 'Waschtisch', radiator: 'Handtuchheizkörper', fan: 'Lüfter', door: 'Tür', window: 'Fenster' };
     const WALL_NAMES = { back: 'Rückwand', front: 'Vorderwand', left: 'linke Wand', right: 'rechte Wand' };
     const fmtM = (v) => Math.max(0, v).toFixed(2).replace('.', ',') + ' m';
+    // Deckenhöhe an Punkt (x, z): bei Dachschräge steigt sie vom Kniestock k über die Tiefe d bis zur Raumhöhe
+    const ceilY = (s, x, z) => {
+      const sl = s.slope;
+      if (!sl) return s.h;
+      const dist = { back: z, front: s.b - z, left: x, right: s.l - x }[sl.side];
+      return Math.min(s.h, sl.k + ((s.h - sl.k) * dist) / Math.max(0.01, sl.d));
+    };
+    // Wände: [Länge, Mitte x, Mitte z, Drehung, Punkt entlang der Wand (u ab Wandmitte) -> [x, z]]; Normale zeigt in den Raum
+    const wallDefs = (s) => [
+      [s.l, s.l / 2, 0, 0, (u) => [s.l / 2 + u, 0]],
+      [s.l, s.l / 2, s.b, Math.PI, (u) => [s.l / 2 - u, s.b]],
+      [s.b, 0, s.b / 2, Math.PI / 2, (u) => [0, s.b / 2 - u]],
+      [s.b, s.l, s.b / 2, -Math.PI / 2, (u) => [s.l, s.b / 2 + u]],
+    ];
+    // Geflieste Wandfläche bis Höhe wh, unter einer Dachschräge entsprechend weniger
+    const wallArea = (s, wh) => wallDefs(s).reduce((sum, [len, , , , at]) => {
+      const n = 60;
+      let a = 0;
+      for (let i = 0; i < n; i++) { const p = at(-len / 2 + ((i + 0.5) * len) / n); a += (Math.min(wh, ceilY(s, p[0], p[1])) * len) / n; }
+      return sum + a;
+    }, 0);
     class LcRoom3D {
       constructor(box) {
         this.box = box;
@@ -245,6 +275,14 @@
           this.hint.textContent = this.mode === '2d' ? 'Grundriss von oben · Objekte ziehen zum Verschieben' : 'Ziehen zum Drehen';
           this.render();
         });
+        this.extra = { door: true, window: false };
+        box.querySelectorAll('[data-3d-extra]').forEach((b) => b.addEventListener('click', () => {
+          const k = b.getAttribute('data-3d-extra');
+          this.extra[k] = !this.extra[k];
+          b.setAttribute('aria-pressed', this.extra[k]);
+          if (this.state && this.T) { this.build(this.state); this.render(); }
+          if (this.onLayout) this.onLayout();
+        }));
         const dimsBtn = box.querySelector('[data-3d-dims]');
         dimsBtn.addEventListener('click', () => {
           this.showDims = !this.showDims;
@@ -336,7 +374,7 @@
             const wall = Object.keys(d).reduce((a, k) => (d[k] < d[a] ? k : a), 'back');
             // Frei im Raum: Objektmitte folgt dem Zeiger, nahe der Wand (< 15 cm) rastet es an der Wand ein
             const dist = d[wall] - drag.userData.d / 2;
-            drag.userData.place = { wall, pos: wall === 'back' || wall === 'front' ? p.x : p.z, dist: dist < 0.15 ? 0 : dist };
+            drag.userData.place = { wall, pos: wall === 'back' || wall === 'front' ? p.x : p.z, dist: dist < 0.15 || drag.userData.wallOnly ? 0 : dist };
             this.put(drag);
             this.active = drag.userData.key;
             this.itemDims();
@@ -368,7 +406,11 @@
         el.addEventListener('wheel', (e) => { e.preventDefault(); this.view.zoom = Math.min(2.2, Math.max(0.6, this.view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); this.render(); }, { passive: false });
       }
       highlight(o, on) {
-        o.traverse((m) => { if (m.material && m.material.emissive) m.material.emissive.setHex(on ? 0x5a3d10 : 0x000000); });
+        o.traverse((m) => {
+          if (!m.material || !m.material.emissive) return;
+          if (m.userData.em === undefined) m.userData.em = m.material.emissive.getHex();
+          m.material.emissive.setHex(on ? 0x5a3d10 : m.userData.em);
+        });
       }
       set(state) {
         const key = JSON.stringify(state);
@@ -449,6 +491,7 @@
         }
         const g = this.room = new T.Group();
         this.size = s;
+        this.kneeDim = null;
         // Maßketten des Raums: einmal gebaut, in render() an die zum Betrachter zeigenden Kanten gesetzt
         const V = T.Vector3;
         this.dimK = Math.hypot(s.l, s.b, s.h || 1) * 0.042;
@@ -484,16 +527,52 @@
         }
         this.wallTex = this.texture(s.wall || s.floor);
         if (s.h) {
-          // [Länge, x, z, Drehung]: Normale jeder Wand zeigt in den Raum
-          [[s.l, s.l / 2, 0, 0], [s.l, s.l / 2, s.b, Math.PI], [s.b, 0, s.b / 2, Math.PI / 2], [s.b, s.l, s.b / 2, -Math.PI / 2]].forEach(([w, x, z, ry]) => {
-            const add = (m, y0, y1) => { m.position.set(x, (y0 + y1) / 2, z); m.rotation.y = ry; g.add(m); };
-            if (s.wallH) add(this.tiledPlane(w, s.wallH, this.wallTex), 0, s.wallH);
-            if (s.h > s.wallH) add(new T.Mesh(new T.PlaneGeometry(w, s.h - s.wallH), paint), s.wallH, s.h);
+          // Wandflächen als Umriss: oben begrenzt durch die Decke (ggf. Dachschräge), Fliesen bis wallH, darüber Putz
+          wallDefs(s).forEach(([len, x, z, ry, at]) => {
+            const top = [];
+            for (let i = 0; i <= 48; i++) { const u = -len / 2 + (i * len) / 48; const q = at(u); top.push([u, ceilY(s, q[0], q[1])]); }
+            const shape = (lo, hi) => {
+              const sh = new T.Shape();
+              top.forEach(([u, y], i) => (i ? sh.lineTo(u, lo(y)) : sh.moveTo(u, lo(y))));
+              for (let i = top.length - 1; i >= 0; i--) sh.lineTo(top[i][0], hi(top[i][1]));
+              return new T.ShapeGeometry(sh);
+            };
+            const add = (geo, mat) => { const m = new T.Mesh(geo, mat); m.position.set(x, 0, z); m.rotation.y = ry; g.add(m); };
+            if (s.wallH) {
+              const geo = shape(() => 0, (y) => Math.min(y, s.wallH));
+              const uv = geo.attributes.uv;
+              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
+              add(geo, this.tiledMat(this.wallTex));
+            }
+            if (top.some(([, y]) => y > s.wallH + 0.001)) add(shape((y) => Math.min(y, s.wallH), (y) => y), paint);
           });
+          if (s.slope) {
+            // Schräge Dachfläche, durchscheinend, damit man von außen hineinsehen kann
+            const sl = s.slope, along = sl.side === 'back' || sl.side === 'front' ? s.l : s.b;
+            const room = sl.side === 'back' || sl.side === 'front' ? s.b : s.l;
+            const de = Math.min(sl.d, room), ye = sl.k + ((s.h - sl.k) * de) / Math.max(0.01, sl.d);
+            const w = (u, dist, y) => ({ back: new T.Vector3(u, y, dist), front: new T.Vector3(u, y, s.b - dist), left: new T.Vector3(dist, y, u), right: new T.Vector3(s.l - dist, y, u) })[sl.side];
+            const a = w(0, 0, sl.k), b = w(along, 0, sl.k), c = w(along, de, ye), d = w(0, de, ye);
+            const geo = new T.BufferGeometry().setFromPoints([a, b, c, a, c, d]);
+            geo.computeVertexNormals();
+            g.add(new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0xf6f3ee, roughness: 0.9, transparent: true, opacity: 0.35, side: T.DoubleSide, depthWrite: false })));
+            // Kniestock-Maß in der Mitte der Schrägwand und Linie im Grundriss, wo die volle Höhe beginnt
+            const m0 = w(along / 2, 0.02, 0), m1 = w(along / 2, 0.02, sl.k);
+            this.kneeDim = this.dim(m0, m1, 'Kniestock ' + fmtM(sl.k), sl.side === 'left' || sl.side === 'right' ? new T.Vector3(0, 0, 0.06) : new T.Vector3(0.06, 0, 0));
+            this.dimsG.add(this.kneeDim);
+            const l0 = w(0, de, 0.03), l1 = w(along, de, 0.03);
+            const ln = new T.Line(new T.BufferGeometry().setFromPoints([l0, l1]), new T.LineBasicMaterial({ color: 0x8a6a3a, depthTest: false }));
+            ln.renderOrder = 9;
+            this.walls2d.add(ln);
+            const lb = this.label('Dachschräge · Kniestock ' + fmtM(sl.k));
+            lb.position.copy(w(along * 0.62, de / 2, 0.05));
+            this.walls2d.add(lb);
+          }
         }
         this.items = [];
         let backUsed = 0;
-        (s.items || []).forEach((it) => {
+        const items = (s.items || []).concat(s.h ? ['door', 'window'].filter((k) => this.extra[k]).map((key) => ({ key })) : []);
+        items.sort((a, b) => (b.key === 'shower') - (a.key === 'shower')).forEach((it) => {
           const o = this.makeItem(it, s);
           if (!o) return;
           o.userData.key = it.key;
@@ -509,6 +588,14 @@
           lb.scale.multiplyScalar(0.8);
           lb.position.set(0, 0.05, d / 2);
           fp.add(lb);
+          if (it.key === 'door') {
+            const arc = [];
+            for (let i = 0; i <= 16; i++) { const t = (i / 16) * Math.PI / 2; arc.push(new V(-w / 2 + w * Math.cos(t), 0.03, w * Math.sin(t))); }
+            arc.push(new V(-w / 2, 0.03, 0));
+            const al = new T.Line(new T.BufferGeometry().setFromPoints(arc), new T.LineBasicMaterial({ color: 0x8a6a3a, depthTest: false }));
+            al.renderOrder = 9;
+            fp.add(al);
+          }
           o.add(fp);
           o.userData.fp = fp;
           this.put(o);
@@ -589,8 +676,10 @@
         }
         if (key === 'vanity') return { wall: 'left', pos: 0.75 + w / 2 };
         if (key === 'tub') return { wall: 'front', pos: w / 2 + 0.05 };
-        if (key === 'radiator') return { wall: 'right', pos: s.b - 0.45 };
-        if (key === 'urinal') return { wall: 'left', pos: s.b - 0.4 };
+        if (key === 'radiator') return { wall: 'left', pos: s.b - 0.4 };
+        if (key === 'urinal') return { wall: 'front', pos: s.l - 0.4 };
+        if (key === 'door') return { wall: 'right', pos: s.b - w / 2 - 0.1 };
+        if (key === 'window') return { wall: 'right', pos: Math.min(0.9, s.b / 2) };
         return { wall: 'front', pos: s.l - 0.3 };
       }
       // Objekt an seine Wand setzen: lokales x = entlang der Wand, lokales z = in den Raum
@@ -689,6 +778,21 @@
           [-0.24, 0.24].forEach((x) => box(0.03, 1.2, 0.03, mt, x, 1.1, 0.06));
           for (let y = 0.6; y <= 1.65; y += 0.07) box(0.48, 0.015, 0.015, mt, 0, y, 0.06);
           o.userData.w = 0.5; o.userData.d = 0.1;
+        } else if (it.key === 'door') {
+          const dw = 0.9, dh = Math.min(2.01, H - 0.05);
+          const frame = m({ color: 0xf4f2ee, roughness: 0.5 });
+          box(dw - 0.08, dh - 0.04, 0.012, m({ color: 0xc9b79c, roughness: 0.6 }), 0, (dh - 0.04) / 2, 0.008);
+          [-dw / 2 + 0.03, dw / 2 - 0.03].forEach((x) => box(0.06, dh, 0.03, frame, x, dh / 2, 0.015));
+          box(dw, 0.06, 0.03, frame, 0, dh - 0.03, 0.015);
+          box(0.12, 0.02, 0.04, chrome(), dw / 2 - 0.15, 1.05, 0.03);
+          o.userData.w = dw; o.userData.d = 0.05; o.userData.wallOnly = true;
+        } else if (it.key === 'window') {
+          const ww = 0.9, wh = 1.0, y0 = Math.max(0.3, Math.min(1.0, H - 0.15 - wh));
+          const frame = m({ color: 0xffffff, roughness: 0.4 });
+          box(ww - 0.1, wh - 0.1, 0.01, m({ color: 0xbcd8e6, roughness: 0.05, emissive: 0x9cc3d8, emissiveIntensity: 0.35 }), 0, y0 + wh / 2, 0.006);
+          [[ww, 0.05, 0, y0 + 0.025], [ww, 0.05, 0, y0 + wh - 0.025], [0.05, wh, -ww / 2 + 0.025, y0 + wh / 2], [0.05, wh, ww / 2 - 0.025, y0 + wh / 2]].forEach(([bw, bh, x, y]) => box(bw, bh, 0.04, frame, x, y, 0.02));
+          box(ww + 0.1, 0.03, 0.14, frame, 0, y0 - 0.015, 0.07);
+          o.userData.w = ww; o.userData.d = 0.12; o.userData.wallOnly = true;
         } else if (it.key === 'fan') {
           cyl(0.1, 0.02, m({ color: 0xffffff, roughness: 0.4 }), 0, H - 0.3, 0.01).rotation.x = Math.PI / 2;
           o.userData.w = 0.2; o.userData.d = 0.05;
@@ -696,7 +800,8 @@
         return o;
       }
       layoutText() {
-        return this.items.filter((o) => this.place[o.userData.key]).map((o) => {
+        if (!this.items.some((o) => this.place[o.userData.key])) return [];
+        return this.items.map((o) => {
           const p = o.userData.place, w = o.userData.w;
           return ITEM_NAMES[o.userData.key] + ' (Breite ' + fmtM(w) + '): ' + WALL_NAMES[p.wall] + ', ' + fmtM(p.pos - w / 2) + ' Abstand ' + (p.wall === 'back' || p.wall === 'front' ? 'von links' : 'von hinten') + (p.dist > 0.04 ? ', frei im Raum ' + fmtM(p.dist) + ' vor der Wand' : ', an der Wand');
         });
@@ -728,6 +833,7 @@
           this.persp.updateProjectionMatrix();
         }
         if (this.walls2d) this.walls2d.visible = flat;
+        if (this.kneeDim) this.kneeDim.visible = !flat;
         this.items.forEach((o) => { o.userData.fp.visible = flat; });
         if (this.rd) {
           const c = this.camera.position, fz = flat || c.z > s.b / 2, fx = !flat && c.x > s.l / 2, o = flat ? 0.4 : 0.3;
@@ -873,7 +979,7 @@
           const mode = this.$('[data-m="wall"]').value;
           const floor = l * b;
           const wh = mode === 'full' ? h : mode === 'half' ? 1.2 : 0;
-          const wall = wh && floor ? Math.max(0, 2 * (l + b) * wh - 2.5) : 0;
+          const wall = wh && floor ? Math.max(0, wallArea({ l, b, h, slope: this.slope3d() }, wh) - 2.5) : 0;
           return { floor, wall };
         }
         return { floor: this.num('[data-m="area"]'), wall: 0 };
@@ -952,7 +1058,14 @@
         if (k === 'leistung') return !!this.$('input[name="lc-leistung"]:checked');
         return true;
       }
+      slope3d() {
+        const side = this.$('[data-m="slope"]').value;
+        if (!side) return null;
+        const h = this.num('[data-m="h"]') || 2.5;
+        return { side, k: Math.min(h, this.num('[data-m="knee"]')), d: this.num('[data-m="sdepth"]') || 1.5 };
+      }
       update() {
+        this.querySelectorAll('[data-slope-only]').forEach((el) => { el.hidden = !this.$('[data-m="slope"]').value; });
         const a = this.areas();
         const calc = this.$('[data-calc]');
         if (a.floor > 0) {
@@ -994,6 +1107,7 @@
           return {
             l, b, h,
             wallH: mode === 'full' ? h : mode === 'half' ? 1.2 : 0,
+            slope: this.slope3d(),
             floor, wall: this.tile3d(this.sel.wand),
             items: this.items3d(),
           };
@@ -1161,7 +1275,10 @@
         this.$('[data-summary]').innerHTML = html;
         const svText = est.sv.map((s) => '- ' + s.label + ' (' + s.detail + '): ca. ' + EUR.format(Math.round(s.sum))).join('\n');
         const layout = this.room3d && this.isBath() ? this.room3d.layoutText() : [];
-        const text = 'Projekt: ' + projName + '\nBoden: ' + NUM.format(a.floor) + ' m²' + (a.wall ? ', Wand: ' + NUM.format(a.wall) + ' m²' : '') + '\nLeistung: ' + leistung + '\n' +
+        const sl = this.isBath() && this.slope3d();
+        const text = 'Projekt: ' + projName + '\nBoden: ' + NUM.format(a.floor) + ' m²' + (a.wall ? ', Wand: ' + NUM.format(a.wall) + ' m²' : '') +
+          (sl ? '\nDachschräge: ' + { back: 'hinten', front: 'vorne', left: 'links', right: 'rechts' }[sl.side] + ', Kniestock ' + fmtM(sl.k) + ', reicht ' + fmtM(sl.d) + ' in den Raum' : '') +
+          '\nLeistung: ' + leistung + '\n' +
           (lines.length ? 'Material:\n' + lines.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + (l.area ? ', ' + l.qty + ' m²' : (l.qty ? ', ' + l.qty + ' Stk' : '')) + (l.sum ? ' = ' + EUR2.format(l.sum / 100) : '')).join('\n') + '\n' : '') +
           (svText ? 'Ausstattung & Leistungen:\n' + svText + '\n' : '') +
           (layout.length ? 'Aufteilung laut 3D-Vorschau:\n' + layout.map((t) => '- ' + t).join('\n') + '\n' : '') +
@@ -1239,6 +1356,8 @@
   .lc-cfg__opt input:checked + span small { color: #d4b47a; }
   .lc-cfg__row, .lc-cfg__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
   .lc-cfg__row--4 { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .lc-cfg__row--slope { margin-top: 12px; }
+  .lc-cfg__field[hidden] { display: none; }
   .lc-cfg__field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: #6f675c; }
   .lc-cfg__field--full { margin-top: 12px; }
   .lc-cfg__field input, .lc-cfg__field textarea, .lc-cfg__field select, .lc-cfg__slot select, .lc-cfg__prod select { border: 1px solid #d8cfc0; border-radius: 2px; padding: 10px 12px; font-size: 16px; background: #fff; color: #111; font-family: inherit; width: 100%; box-sizing: border-box; }
