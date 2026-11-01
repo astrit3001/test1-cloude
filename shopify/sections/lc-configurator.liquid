@@ -452,11 +452,13 @@
         this.state = state;
         this.init().then(() => { this.build(state); this.render(); }, () => {});
       }
-      // Fliesentextur: Block aus 4 × 4 (schmale Formate 4 × 8) Platten, jede ein anderer Ausschnitt des Fliesenbilds,
-      // zufällig gespiegelt und leicht in der Helligkeit variiert – wie Platten aus einer Lieferung.
+      // Fliesentextur: Block aus 4 × 4 (schmale Formate 4 × 8) Platten.
+      // Mit gepflegten Plattenmotiven (Metafeld textur_3d): Motive gemischt wie beim Verlegen – jedes gleich oft,
+      // nie dasselbe direkt nebeneinander, teils um 180° gedreht.
+      // Ohne Motive: jede Platte ein anderer Ausschnitt des Fliesenbilds, zufällig gespiegelt, leicht variiert.
       // Raster = Fliese + 2-mm-Fuge, daher stimmen Fugenbild, Maße und Pläne weiterhin exakt.
       texture(t) {
-        const id = t ? t.url + '|' + t.w + '|' + t.h : 'none';
+        const id = t ? t.url + '|' + (t.motifs || []).join(',') + '|' + t.w + '|' + t.h : 'none';
         if (this.tex[id]) return this.tex[id];
         const T = this.T;
         const tw = t ? Math.max(t.w, t.h) : 60, th = t ? Math.min(t.w, t.h) : 60;
@@ -468,7 +470,7 @@
         cv.width = W * cols; cv.height = H * rows;
         const ctx = cv.getContext('2d');
         const grout = Math.max(1.5, GROUT * px);
-        const draw = (img) => {
+        const draw = (img, motifs) => {
           // fester Zufall je Fliese, damit die Wand bei jedem Neuaufbau gleich aussieht
           let seed = 7;
           for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
@@ -476,7 +478,31 @@
           let lum = 0.85;
           ctx.fillStyle = '#ddd8d0';
           ctx.fillRect(0, 0, cv.width, cv.height);
-          if (img) {
+          if (motifs && motifs.length) {
+            ctx.drawImage(motifs[0], 0, 0, 1, 1);
+            const px1 = ctx.getImageData(0, 0, 1, 1).data;
+            lum = (0.3 * px1[0] + 0.59 * px1[1] + 0.11 * px1[2]) / 255;
+            let deck = [];
+            const grid = [];
+            for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+              if (!deck.length) { deck = motifs.map((_, k) => k); for (let k = deck.length - 1; k > 0; k--) { const r = Math.floor(rnd() * (k + 1)); [deck[k], deck[r]] = [deck[r], deck[k]]; } }
+              // Nachbarn links/oben und – weil sich der Block wiederholt – über die Blockkante rechts/unten
+              const nb = [i ? grid[j * cols + i - 1] : -1, j ? grid[(j - 1) * cols + i] : -1, i === cols - 1 ? grid[j * cols] : -1, j === rows - 1 ? grid[i] : -1];
+              const free = (k) => nb.slice(0, motifs.length < 3 ? 1 : 4).indexOf(k) < 0;
+              let pick = deck.findIndex(free), m;
+              if (pick > -1) m = deck.splice(pick, 1)[0];
+              else { const alt = motifs.map((_, k) => k).filter(free); m = alt.length ? alt[Math.floor(rnd() * alt.length)] : deck.shift(); }
+              grid.push(m);
+              const im = motifs[m], ia = im.width / im.height, ta = W / H;
+              const sw = ia > ta ? im.height * ta : im.width, sh = ia > ta ? im.height : im.width / ta;
+              const rot = rnd() < 0.5;
+              ctx.save();
+              ctx.translate(i * W + (rot ? W : 0), j * H + (rot ? H : 0));
+              ctx.scale(rot ? -1 : 1, rot ? -1 : 1);
+              ctx.drawImage(im, (im.width - sw) / 2, (im.height - sh) / 2, sw, sh, 0, 0, W, H);
+              ctx.restore();
+            }
+          } else if (img) {
             // Mittlere Helligkeit des Fliesenbilds: helle Fliese -> dunklere Fuge und umgekehrt
             ctx.drawImage(img, 0, 0, 1, 1);
             const px1 = ctx.getImageData(0, 0, 1, 1).data;
@@ -507,11 +533,17 @@
         tex.colorSpace = T.SRGBColorSpace;
         tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
         const out = this.tex[id] = { tex, bw: (pw * cols) / 100, bh: (ph * rows) / 100, pw: pw / 100, ph: ph / 100, tw: tw / 100, th: th / 100, gloss: !!(t && t.gloss) };
-        if (t && t.url) {
+        const load = (u) => new Promise((ok, fail) => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          img.onload = () => { draw(img); tex.needsUpdate = true; this.render(); };
-          img.src = t.url.indexOf('//') === 0 ? 'https:' + t.url : t.url;
+          img.onload = () => ok(img);
+          img.onerror = fail;
+          img.src = u.indexOf('//') === 0 ? 'https:' + u : u;
+        });
+        if (t && t.motifs && t.motifs.length) {
+          Promise.all(t.motifs.map(load)).then((imgs) => { draw(null, imgs); tex.needsUpdate = true; this.render(); }, () => {});
+        } else if (t && t.url) {
+          load(t.url).then((img) => { draw(img); tex.needsUpdate = true; this.render(); }, () => {});
         }
         return out;
       }
@@ -1639,7 +1671,9 @@
         const m = String(v.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/) || String(sel.p.t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)/);
         const w = m ? parseFloat(m[1].replace(',', '.')) : 60, h = m ? parseFloat(m[2].replace(',', '.')) : 60;
         const url = [v.tx, sel.p.tx, sel.p.img].find((x) => typeof x === 'string' && x) || '';
-        return { url, w, h, gloss: /poliert|glänzend|lappato/i.test(v.t + ' ' + sel.p.t) };
+        const ok = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && x) : []);
+        const motifs = ok(v.mt).length ? ok(v.mt) : ok(sel.p.mt);
+        return { url, motifs, w, h, gloss: /poliert|glänzend|lappato/i.test(v.t + ' ' + sel.p.t) };
       }
       scene3d() {
         const floor = this.tile3d(this.sel.boden);

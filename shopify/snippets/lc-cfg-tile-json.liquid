@@ -1,26 +1,38 @@
 {%- comment -%}
   Eine Fliese als JSON für den Projekt-Konfigurator.
-  "tx" = Oberflächenbild für die 3D-Vorschau. Reihenfolge:
-  1. Metafeld custom.textur_3d (Datei/Bild) – exakte Fliesenoberfläche, empfohlen
-  2. erstes Produktbild mit "farbe" im Dateinamen
-  3. zweites Produktbild (erstes ist meist ein Raumfoto)
+  "mt" = echte Plattenmotive aus dem Metafeld custom.textur_3d (Liste von Bildern, an der Variante oder am Produkt).
+         Die 3D-Vorschau verteilt sie zufällig auf die Platten.
+  "tx" = Ersatzbild, wenn keine Motive gepflegt sind:
+         1. Variantenbild (außer Raumfoto)
+         2. erstes Produktbild mit "farbe" im Dateinamen
+         3. zweites Produktbild (erstes ist meist ein Raumfoto)
 {%- endcomment -%}
 {%- liquid
+  assign mt = ''
+  for m in p.metafields.custom.textur_3d.value
+    assign u = m | image_url: width: 1024
+    assign mt = mt | append: u | append: '|'
+  endfor
   assign tx = ''
-  if p.metafields.custom.textur_3d != blank
-    assign tx = p.metafields.custom.textur_3d.value | image_url: width: 1024
-  else
-    for im in p.images
-      if im.src contains 'farbe'
-        assign tx = im | image_url: width: 1024
-        break
-      endif
-    endfor
-    if tx == '' and p.images.size > 1
-      assign tx = p.images[1] | image_url: width: 1024
+  for im in p.images
+    if im.src contains 'farbe'
+      assign tx = im | image_url: width: 1024
+      break
     endif
+  endfor
+  if tx == '' and p.images.size > 1
+    assign tx = p.images[1] | image_url: width: 1024
   endif
 -%}
-{"id":{{ p.id }},"c":{{ c | json }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"tx":{% if tx != '' %}{{ tx | json }}{% else %}null{% endif %},"vs":[
-  {%- for v in p.variants limit: 30 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}{% if v.image %}{% unless v.image.src contains 'anwendung' %},"tx":{{ v.image | image_url: width: 1024 | json }}{% endunless %}{% endif %}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
+{"id":{{ p.id }},"c":{{ c | json }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"tx":{% if tx != '' %}{{ tx | json }}{% else %}null{% endif %},"mt":{{ mt | split: '|' | json }},"vs":[
+  {%- for v in p.variants limit: 30 -%}
+    {%- liquid
+      assign vmt = ''
+      for m in v.metafields.custom.textur_3d.value
+        assign u = m | image_url: width: 1024
+        assign vmt = vmt | append: u | append: '|'
+      endfor
+    -%}
+    {"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}{% if v.image %}{% unless v.image.src contains 'anwendung' %},"tx":{{ v.image | image_url: width: 1024 | json }}{% endunless %}{% endif %},"mt":{{ vmt | split: '|' | json }}}{%- unless forloop.last -%},{%- endunless -%}
+  {%- endfor -%}
 ]}
