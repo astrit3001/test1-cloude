@@ -7,7 +7,7 @@
     {%- if s.title != blank -%}<div class="lc-heading"><h2>{{ s.title }}</h2></div>{%- endif -%}
     {%- if s.intro != blank -%}<p class="lc-cfg__intro">{{ s.intro }}</p>{%- endif -%}
 
-    <lc-configurator class="lc-cfg" data-wa="{{ wa }}" data-lay-min="{{ s.lay_min }}" data-lay-max="{{ s.lay_max }}" data-xxl-min="{{ s.xxl_min }}" data-xxl-max="{{ s.xxl_max }}" data-lay-bath="{{ s.lay_bath | default: 200 }}" data-bath-from="{{ s.bath_from }}" data-spread="{{ s.spread | default: 15 }}">
+    <lc-configurator class="lc-cfg" data-wa="{{ wa }}" data-lay-min="{{ s.lay_min }}" data-lay-max="{{ s.lay_max }}" data-xxl-min="{{ s.xxl_min }}" data-xxl-max="{{ s.xxl_max }}" data-lay-bath="{{ s.lay_bath | default: 200 }}" data-bath-from="{{ s.bath_from }}" data-spread="{{ s.spread | default: 15 }}" data-pattern-extra="{{ s.pattern_extra | default: 45 }}">
       <script type="text/plain" data-options>{{ s.options }}
 {{ s.options_extra }}</script>
       {%- comment -%} Jede Fliese in einem eigenen Block: ein fehlerhaftes Produkt legt nicht die ganze Auswahl lahm {%- endcomment -%}
@@ -135,6 +135,7 @@
       <div class="lc-cfg__step" data-step="fliesen">
         <h3>Wählen Sie Ihre Fliese</h3>
         <div class="lc-cfg__slots" data-slots></div>
+        <div class="lc-cfg__accent" data-accent></div>
         <div class="lc-cfg__chips" data-tile-filter></div>
         <div class="lc-cfg__grid-products" data-tile-grid></div>
         <label class="lc-cfg__skip"><input type="checkbox" data-tile-skip> Ich möchte mich zur Fliesenauswahl beraten lassen</label>
@@ -241,6 +242,8 @@
     const GROUT = 0.2; // Fugenbreite in cm
     const SOCKEL = 0.08; // Sockelhöhe in m
     const MODES = ['full', 'half', 'sockel', 'none'];
+    const PATTERN_NAMES = { standard: 'normal (Raster)', halb: 'Halbverband', stack: 'Stripes senkrecht', fisch: 'Fischgrät 45°', fisch90: 'Fischgrät 90°' };
+    const ZONE_NAMES = { vorwand: 'Vorwand WC (Front & Ablage)', dusche: 'Duschrückwand', 'dusche-seite': 'Dusch-Seitenwand', duschboden: 'Duschboden (bodengleich)', waschtisch: 'Wand hinter Waschtisch', wc: 'Wand hinter WC', back: 'ganze Rückwand', right: 'ganze rechte Wand', front: 'ganze Vorderwand', left: 'ganze linke Wand' };
     const MODE_NAMES = { full: 'raumhoch', half: 'halbhoch (1,20 m)', sockel: 'nur Sockel (8 cm)', none: 'ohne Fliesen' };
     // Bewegungsflächen & Abstände für die automatische Planung (Richtwerte; VDI 6000: 80 × 75 cm vor dem WC)
     const PLAN = { shower: { side: 0, front: 0.75 }, tub: { side: 0, front: 0.75 }, wc: { side: 0.2, front: 0.75 }, bidet: { side: 0.2, front: 0.75 }, urinal: { side: 0.2, front: 0.75 }, vanity: { side: 0.05, front: 0.75 }, radiator: { side: 0.05, front: 0 }, fan: { side: 0, front: 0 } };
@@ -717,6 +720,8 @@
             this.walls2d.add(lb);
           }
         }
+        this.accentZones = this.computeAccentZones(s);
+        this.accentMeshes(g);
         if (this.showZones) this.zoneMeshes(g);
         this.scene.add(g);
         this.itemDims();
@@ -828,11 +833,23 @@
         const cyl = (r, h, mt, x, y, z) => { const c = new T.Mesh(new T.CylinderGeometry(r, r, h, 32), mt); c.position.set(x, y, z); o.add(c); return c; };
         const H = s.h || 2.5;
         if (it.key === 'wc') {
+          // Wand-WC: Vorsatzschale 15 cm (Unterputz-Spülkasten), gefliest; Fliesen der Front mittig zur Drückerplatte
+          const vw = 0.9, vh = 1.2, vd = it.stand ? 0 : 0.15;
           if (it.stand) { box(0.37, 0.2, 0.62, ceramic(), 0, 0.32, 0.31); box(0.22, 0.24, 0.3, ceramic(), 0, 0.12, 0.3); box(0.42, 0.38, 0.18, ceramic(), 0, 0.65, 0.09); }
-          else { box(0.37, 0.2, 0.54, ceramic(), 0, 0.32, 0.27); box(0.25, 0.16, 0.01, chrome(), 0, 1.05, 0.005); }
-          box(0.38, 0.025, 0.5, ceramic(), 0, 0.435, 0.27);
-          o.userData.w = 0.45; o.userData.d = it.stand ? 0.65 : 0.55;
-          o.userData.elev = it.stand ? [[-0.19, 0.19, 0, 0.42], [-0.21, 0.21, 0.46, 0.84]] : [[-0.19, 0.19, 0.2, 0.44], [-0.125, 0.125, 0.97, 1.13]];
+          else {
+            const vb = this.tiledBox(vw, vh, vd, this.wallTex);
+            const uv = vb.geometry.attributes.uv;
+            for (let i = 16; i < 20; i++) uv.setX(i, uv.getX(i) - vw / 2 / this.wallTex.bw);
+            vb.position.set(0, vh / 2, vd / 2);
+            o.add(vb);
+            box(0.37, 0.2, 0.54, ceramic(), 0, 0.32, vd + 0.27);
+            box(0.25, 0.16, 0.01, chrome(), 0, 1.05, vd + 0.005);
+            o.userData.vorwand = { w: vw, h: vh, d: vd };
+            o.userData.tileArea = vw * vh + vw * vd + 2 * vd * vh;
+          }
+          box(0.38, 0.025, 0.5, ceramic(), 0, 0.435, vd + 0.27);
+          o.userData.w = it.stand ? 0.45 : vw; o.userData.d = it.stand ? 0.65 : vd + 0.55;
+          o.userData.elev = it.stand ? [[-0.19, 0.19, 0, 0.42], [-0.21, 0.21, 0.46, 0.84]] : [[-vw / 2, vw / 2, 0, vh], [-0.19, 0.19, 0.2, 0.44], [-0.125, 0.125, 0.97, 1.13]];
           o.userData.conn = it.stand
             ? [{ x: 0, y: 0.18, t: 'AW', n: 'Abwasser DN 100 (waagerecht)' }, { x: -0.2, y: 0.15, t: 'KW', n: 'Eckventil Spülkasten' }]
             : [{ x: 0, y: 0.23, t: 'AW', n: 'Abwasser DN 100' }, { x: 0, y: 1.0, t: 'KW', n: 'Zulauf Spülkasten im Vorwandelement' }];
@@ -1011,7 +1028,7 @@
           const base = this.jointsBase[wall] = finish({ ew, pw, dev, status }, wall);
           const j = Object.assign({}, base);
           const o = (this.items || []).filter((i) => i.userData.place && i.userData.place.wall === wall && !(i.userData.place.dist > 0.05) && lead.indexOf(i.userData.key) > -1)
-            .sort((a, b) => lead.indexOf(a.userData.key) - lead.indexOf(b.userData.key))[0];
+            .filter((i) => !i.userData.vorwand).sort((a, b) => lead.indexOf(a.userData.key) - lead.indexOf(b.userData.key))[0];
           if (o) {
             const a = o.userData.place.pos + this.armDir(wall) * (o.userData.arm || 0), h = pw / 2;
             const off = a - (j.ew + Math.round((a - j.ew) / h) * h);
@@ -1021,6 +1038,152 @@
         });
       }
       armDir(wall) { return wall === 'back' || wall === 'right' ? 1 : -1; }
+      // ---------- Akzentflächen: andere Fliese + Verlegemuster in ausgewählten Bereichen ----------
+      // Bereiche: Duschrückwand, Dusch-Seitenwand, Duschboden, Wand hinter Waschtisch/WC oder ganze Wand.
+      computeAccentZones(s) {
+        const out = [], taken = {}, wallTaken = {};
+        const find = (k) => this.items.find((o) => o.userData.key === k && !(o.userData.place.dist > 0.05));
+        const wz = (ac, wall, h0, h1) => {
+          const len = this.wallLen(wall);
+          h0 = Math.max(0, Math.min(len, h0)); h1 = Math.max(0, Math.min(len, h1));
+          if (h1 - h0 < 0.05 || wallTaken[wall]) return;
+          const top = Math.min(this.ceilAt(wall, h0), this.ceilAt(wall, (h0 + h1) / 2), this.ceilAt(wall, h1));
+          out.push({ ac, kind: 'wall', wall, h0, h1, top });
+        };
+        const byAxis = (ac, o, a0, a1) => { const w = o.userData.place.wall, x0 = this.axisToH(w, a0), x1 = this.axisToH(w, a1); wz(ac, w, Math.min(x0, x1), Math.max(x0, x1)); };
+        const acs = s.accents || [];
+        // ganze Wände zuerst, damit Teilflächen derselben Wand nicht doppelt zählen
+        acs.forEach((ac) => ac.zones.filter((z) => WALL_NAMES[z]).forEach((z) => { if (taken[z]) return; taken[z] = 1; wz(ac, z, 0, this.wallLen(z)); wallTaken[z] = 1; }));
+        acs.forEach((ac) => ac.zones.filter((z) => !WALL_NAMES[z]).forEach((z) => {
+          if (taken[z]) return;
+          taken[z] = 1;
+          const sh = find('shower');
+          if (z === 'dusche' && sh) byAxis(ac, sh, sh.userData.place.pos - sh.userData.w / 2, sh.userData.place.pos + sh.userData.w / 2);
+          if (z === 'dusche-seite' && sh) Object.keys(this.spans).forEach((w) => { if (w !== sh.userData.place.wall) this.spans[w].forEach(([h0, h1]) => wz(ac, w, h0, h1)); });
+          if (z === 'duschboden' && sh && !sh.userData.tray) out.push({ ac, kind: 'floor', o: sh });
+          const vt = find('vanity');
+          if (z === 'waschtisch' && vt) byAxis(ac, vt, vt.userData.place.pos - vt.userData.w / 2, vt.userData.place.pos + vt.userData.w / 2);
+          const wc = find('wc');
+          if (z === 'wc' && wc) byAxis(ac, wc, wc.userData.place.pos - 0.45, wc.userData.place.pos + 0.45);
+          if (z === 'vorwand' && wc && wc.userData.vorwand) out.push({ ac, kind: 'vorwand', o: wc });
+        }));
+        return out;
+      }
+      accentAreas() {
+        const out = {};
+        (this.accentZones || []).forEach((z) => {
+          const r = out[z.ac.key] = out[z.ac.key] || { area: 0, wallOverlap: 0, floor: 0, zones: [] };
+          if (z.kind === 'floor') { const a = z.o.userData.w * z.o.userData.d; r.area += a; r.floor += a; return; }
+          if (z.kind === 'vorwand') { const v = z.o.userData.vorwand, a = v.w * v.h + v.w * v.d; r.area += a; r.wallOverlap += a; return; }
+          const w = z.h1 - z.h0, pr = this.wallProfile(z.wall), n = 24;
+          r.area += w * z.top;
+          for (let i = 0; i < n; i++) { const h = z.h0 + ((i + 0.5) * w) / n, e = pr.find((q) => q[0] >= h) || pr[pr.length - 1]; r.wallOverlap += (Math.min(e[2], z.top) * w) / n; }
+        });
+        return out;
+      }
+      // Ziegel/Platten eines Verlegemusters als [Mitte x, Mitte y, Winkel] in Metern (Canvas: y nach unten)
+      patternBricks(pattern, wM, hM, L, W) {
+        const g = GROUT / 100, Lp = L + g, Wp = W + g, out = [];
+        if (pattern === 'stack') { for (let x = 0; x < wM; x += Wp) for (let y = 0; y < hM; y += Lp) out.push([x + Wp / 2, hM - y - Lp / 2, Math.PI / 2]); return out; }
+        if (pattern === 'halb') { for (let r = 0, y = 0; y < hM; y += Wp, r++) for (let x = r % 2 ? -Lp / 2 : 0; x < wM; x += Lp) out.push([x + Lp / 2, hM - y - Wp / 2, 0]); return out; }
+        if (pattern !== 'fisch' && pattern !== 'fisch90') { for (let y = 0; y < hM; y += Wp) for (let x = 0; x < wM; x += Lp) out.push([x + Lp / 2, hM - y - Wp / 2, 0]); return out; }
+        // Fischgrät: Paar aus liegender und stehender Platte, Gitter t1 = (W, W), t2 = (L + W, −(L − W)); 45° gedreht für klassisches Fischgrät
+        const rot = pattern === 'fisch' ? Math.PI / 4 : 0, c = Math.cos(rot), sn = Math.sin(rot), cx = wM / 2, cy = hM / 2;
+        const N = Math.ceil(Math.hypot(wM, hM) / Wp) + 3;
+        for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
+          const bx = i * Wp + j * (Lp + Wp), by = i * Wp - j * (Lp - Wp);
+          [[bx + Lp / 2, by + Wp / 2, 0], [bx + Lp + Wp / 2, by + (2 * Wp - Lp) / 2, Math.PI / 2]].forEach(([x, y, a]) => {
+            const px = cx + x * c - y * sn, py = cy + x * sn + y * c;
+            if (px > -Lp && px < wM + Lp && py > -Lp && py < hM + Lp) out.push([px, py, a + rot]);
+          });
+        }
+        return out;
+      }
+      // Einmalige (nicht wiederholte) Textur in Zonengröße mit dem Verlegemuster
+      patternMat(ac, wM, hM) {
+        const T = this.T, t = ac.tile, ppm = Math.min(420, 2048 / Math.max(wM, hM));
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(2, Math.round(wM * ppm)); cv.height = Math.max(2, Math.round(hM * ppm));
+        const ctx = cv.getContext('2d');
+        const L = Math.max(t.w, t.h) / 100, W = Math.min(t.w, t.h) / 100;
+        const bricks = this.patternBricks(ac.pattern, wM, hM, L, W);
+        const tex = new T.CanvasTexture(cv);
+        tex.colorSpace = T.SRGBColorSpace;
+        tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        const draw = (imgs) => {
+          let seed = 11;
+          const id = ac.key + ac.pattern + (t.url || '');
+          for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
+          const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+          ctx.fillStyle = '#cfc9c0';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+          const Lpx = L * ppm, Wpx = W * ppm;
+          bricks.forEach(([x, y, a]) => {
+            ctx.save();
+            ctx.translate(x * ppm, y * ppm);
+            ctx.rotate(a);
+            const im = imgs && imgs.length ? imgs[Math.floor(rnd() * imgs.length)] : null;
+            if (im) {
+              const ia = im.width / im.height, ta = Lpx / Wpx;
+              const k = imgs.length > 1 ? 1 : 0.6 + rnd() * 0.3;
+              const sw = (ia > ta ? im.height * ta : im.width) * k, sh = (ia > ta ? im.height : im.width / ta) * k;
+              ctx.drawImage(im, rnd() * (im.width - sw), rnd() * (im.height - sh), sw, sh, -Lpx / 2, -Wpx / 2, Lpx, Wpx);
+              const v = (rnd() - 0.5) * 0.08;
+              ctx.fillStyle = v > 0 ? 'rgba(255,255,255,' + v + ')' : 'rgba(0,0,0,' + -v + ')';
+              ctx.fillRect(-Lpx / 2, -Wpx / 2, Lpx, Wpx);
+            } else {
+              ctx.fillStyle = '#e4dfd7';
+              ctx.fillRect(-Lpx / 2, -Wpx / 2, Lpx, Wpx);
+            }
+            ctx.restore();
+          });
+        };
+        draw(null);
+        const urls = t.motifs && t.motifs.length ? t.motifs : t.url ? [t.url] : [];
+        if (urls.length) {
+          Promise.all(urls.map((u) => new Promise((ok, fail) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => ok(im); im.onerror = fail; im.src = u.indexOf('//') === 0 ? 'https:' + u : u; })))
+            .then((imgs) => { draw(imgs); tex.needsUpdate = true; this.render(); }, () => {});
+        }
+        return new T.MeshStandardMaterial({ map: tex, roughness: t.gloss ? 0.18 : 0.55 });
+      }
+      accentMeshes(g) {
+        const T = this.T, s = this.size;
+        (this.accentZones || []).forEach((z) => {
+          if (z.kind === 'vorwand') {
+            const v = z.o.userData.vorwand;
+            const f = new T.Mesh(new T.PlaneGeometry(v.w, v.h), this.patternMat(z.ac, v.w, v.h));
+            f.position.set(0, v.h / 2, v.d + 0.003);
+            const t = new T.Mesh(new T.PlaneGeometry(v.w, v.d), this.patternMat(z.ac, v.w, v.d));
+            t.rotation.x = -Math.PI / 2;
+            t.position.set(0, v.h + 0.003, v.d / 2);
+            z.o.add(f, t);
+            return;
+          }
+          if (z.kind === 'floor') {
+            const u = z.o.userData, m = new T.Mesh(new T.PlaneGeometry(u.w, u.d), this.patternMat(z.ac, u.w, u.d));
+            m.rotation.x = -Math.PI / 2;
+            m.position.set(0, 0.004, u.d / 2);
+            z.o.add(m);
+            return;
+          }
+          const def = wallDefs(s).find((d) => d[5] === z.wall), len = this.wallLen(z.wall), w = z.h1 - z.h0;
+          const grp = new T.Group();
+          grp.position.set(def[1], 0, def[2]);
+          grp.rotation.y = def[3];
+          const m = new T.Mesh(new T.PlaneGeometry(w, z.top), this.patternMat(z.ac, w, z.top));
+          m.position.set(z.h0 + w / 2 - len / 2, z.top / 2, 0.004);
+          grp.add(m);
+          g.add(grp);
+        });
+      }
+      accentSVG(wall) {
+        const s = this.size, H = s.h;
+        return (this.accentZones || []).filter((z) => z.kind === 'wall' && z.wall === wall).map((z) => {
+          const x = cm(z.h0), w = cm(z.h1 - z.h0), y = cm(H - z.top), h = cm(z.top);
+          return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="rgba(184,149,90,.22)" stroke="#8a6a3a" stroke-width="1.2" stroke-dasharray="4 3"/>' +
+            '<text x="' + (x + w / 2) + '" y="' + (y + 14) + '" font-size="8" text-anchor="middle" fill="#6b4f22">' + (z.ac.key === 'akzent1' ? 'Akzent 1' : 'Akzent 2') + ': ' + PATTERN_NAMES[z.ac.pattern] + '</text>';
+        }).join('');
+      }
       // ---------- Wandfliesen: Modus je Wand, Duschbereich immer raumhoch ----------
       modeOf(wall) { return this.wallMode[wall] || this.size.wallMode || 'full'; }
       // Weltachse (x bzw. z) -> Abstand ab linker Ecke vom Raum aus gesehen
@@ -1198,6 +1361,11 @@
         this.items.forEach((o) => {
           const u = o.userData;
           if (u.arm === undefined || u.place.dist > 0.05) return;
+          if (u.vorwand) {
+            const y2 = this.armHeight(u.armY);
+            out.push({ grp: 'fuge', lvl: 'ok', t: 'WC – Drückerplatte: mittig auf der Fuge der Vorsatzschale' + (Math.abs(y2 - u.armY) < 0.001 ? ', Höhe passt' : ', Höhe auf ' + cmT(y2) + ' cm statt ' + cmT(u.armY) + ' cm') });
+            return;
+          }
           const j = this.joints[u.place.wall], a = u.place.pos + this.armDir(u.place.wall) * u.arm;
           const r = ((a - j.ew) % j.pw + j.pw) % j.pw, dj = Math.min(r, j.pw - r), dm = Math.abs(r - j.pw / 2);
           const nm = ITEM_NAMES[u.key] + (u.armName ? ' – ' + u.armName : '');
@@ -1253,7 +1421,7 @@
         const order = ['shower', 'tub', 'wc', 'bidet', 'vanity', 'urinal', 'radiator', 'fan'];
         const items = this.items.filter((o) => order.indexOf(o.userData.key) > -1).sort((a, b) => order.indexOf(a.userData.key) - order.indexOf(b.userData.key));
         const cands = (o, st) => {
-          const u = o.userData, sp = PLAN[u.key], w = u.w, d = u.d, out = [];
+          const u = o.userData, sp = u.vorwand ? { side: 0, front: 0.75 } : PLAN[u.key], w = u.w, d = u.d, out = [];
           const socket = u.key === 'vanity' ? w / 2 + 0.2 : u.key === 'wc' && (u.conn || []).some((k) => /Steckdose/.test(k.n)) ? 0.3 : null;
           ['back', 'right', 'front', 'left'].forEach((wall) => {
             const len = lenOf(wall);
@@ -1364,6 +1532,7 @@
           for (let y = th; y < maxT - 0.001; y += th) o += '<line x1="0" y1="' + Y(y) + '" x2="' + X(len) + '" y2="' + Y(y) + '"/>';
           o += '</g>';
         }
+        if (tiles) o += this.accentSVG(wall);
         this.onWall(wall).forEach((it) => {
           const u = it.userData, c = this.fromLeft(u.place);
           (u.elev || []).forEach(([x0, x1, y0, y1]) => {
@@ -1525,9 +1694,22 @@
         this.tiles = this.tiles.filter((p) => (seen[p.id] ? false : (seen[p.id] = true)));
         this.sanitary = this.readJSON('[data-sanitary]');
         this.opts = this.parseOptions(this.$('[data-options]').textContent);
-        this.cfg = { layMax: +this.dataset.layMax || 0, layBath: +this.dataset.layBath || 0, xxlMax: +this.dataset.xxlMax || 0, bathFrom: +this.dataset.bathFrom || 0, spread: this.dataset.spread === undefined ? 15 : +this.dataset.spread };
+        this.cfg = { layMax: +this.dataset.layMax || 0, layBath: +this.dataset.layBath || 0, xxlMax: +this.dataset.xxlMax || 0, bathFrom: +this.dataset.bathFrom || 0, spread: this.dataset.spread === undefined ? 15 : +this.dataset.spread, patternExtra: +this.dataset.patternExtra || 0 };
         this.choice = {};
-        this.sel = { boden: null, wand: null, san: {} };
+        this.sel = { boden: null, wand: null, akzent1: null, akzent2: null, san: {} };
+        this.accent = { akzent1: { zones: ['dusche'], pattern: 'fisch' }, akzent2: { zones: ['waschtisch'], pattern: 'stack' } };
+        // 'input' kommt vor 'change' und löst ein Neuzeichnen aus – daher hier beide Ereignisse
+        const onAccent = (e) => {
+          const z = e.target.dataset.accZone, pt = e.target.dataset.accPattern;
+          if (z) {
+            const [k, zone] = z.split('|'), other = k === 'akzent1' ? 'akzent2' : 'akzent1', list = this.accent[k].zones;
+            if (e.target.checked) { if (list.indexOf(zone) < 0) list.push(zone); this.accent[other].zones = this.accent[other].zones.filter((x) => x !== zone); }
+            else this.accent[k].zones = list.filter((x) => x !== zone);
+          }
+          if (pt) this.accent[pt].pattern = e.target.value;
+        };
+        this.$('[data-accent]').addEventListener('input', onAccent);
+        this.$('[data-accent]').addEventListener('change', onAccent);
         this.slot = 'boden';
         this.tileFilter = 'Alle';
         this.sanFilter = 'Alle';
@@ -1630,7 +1812,7 @@
           const r = this.$('input[name="lc-leistung"]'); if (r) r.checked = true;
           this.opts.filter((g) => g.step === 'L' && g.name === 'Vorarbeiten').forEach((g) => { this.choice[g.name] = g.items.slice(0, 2).map((i) => i.id); });
         }
-        if (!bath) this.sel.wand = null;
+        if (!bath) { this.sel.wand = null; this.sel.akzent1 = null; this.sel.akzent2 = null; }
         this.slot = 'boden';
         this.tileFilter = this.project() === 'terrasse' ? 'Outdoor' : 'Alle';
         this.renderProgress();
@@ -1688,13 +1870,27 @@
           const qty = v.a ? this.need(m2) : (pc ? Math.ceil((m2 * 1.1) / pc) : 0);
           out.push({ label, title: clean(sel.p.t), vt: v.t + (pc ? ' · ' + NUM.format(pc) + ' m² je Platte' : ''), vid: v.id, qty, unit: v.a ? 'm²' : 'Stk', price: v.p, sum: qty * v.p, area: v.a });
         };
-        add('Bodenfliese', this.sel.boden, a.floor);
-        if (this.isBath()) add('Wandfliese', this.sel.wand || this.sel.boden, a.wall);
+        // Akzentflächen ersetzen Boden-/Wandfliesen in ihrem Bereich
+        const acc = this.accentAreas();
+        let floorA = a.floor, wallA = a.wall;
+        Object.keys(acc).forEach((k) => { floorA -= acc[k].floor; wallA -= acc[k].wallOverlap; });
+        add('Bodenfliese', this.sel.boden, Math.max(0, floorA));
+        if (this.isBath()) add('Wandfliese', this.sel.wand || this.sel.boden, Math.max(0, wallA));
+        Object.keys(acc).forEach((k) => {
+          const pt = this.accent[k].pattern, zones = this.accent[k].zones.map((z) => ZONE_NAMES[z]).join(', ');
+          add((k === 'akzent1' ? 'Akzentfliese 1' : 'Akzentfliese 2') + ' – ' + PATTERN_NAMES[pt] + ' (' + zones + ')', this.sel[k], acc[k].area * (/fisch/.test(pt) ? 1.05 : 1));
+        });
         Object.values(this.sel.san).forEach((x) => {
           const v = x.p.vs.find((vv) => vv.id === x.vid) || x.p.vs[0];
           out.push({ label: 'Sanitär', title: x.p.t, vt: v.t === 'Default Title' ? '' : v.t, vid: v.id, qty: x.q, unit: 'Stk', price: v.p, sum: x.q * v.p, area: false });
         });
         return out;
+      }
+      accentAreas() {
+        if (!this.isBath() || !this.room3d || !this.room3d.accentAreas || !this.room3d.size) return {};
+        const r = this.room3d.accentAreas();
+        Object.keys(r).forEach((k) => { if (!this.sel[k]) delete r[k]; });
+        return r;
       }
       total() { return this.lines().reduce((s, l) => s + l.sum, 0); }
       services() {
@@ -1708,6 +1904,10 @@
           const big = [['boden', a.floor], ['wand', a.wall]].reduce((s, [k, m]) => s + (this.isLarge(k === 'wand' ? (this.sel.wand || this.sel.boden) : this.sel.boden) ? m : 0), 0);
           if (big > 0 && this.cfg.xxlMax) out.push({ label: 'Zuschlag Großformat-Verlegung', detail: NUM.format(big) + ' m² × ' + EUR.format(this.cfg.xxlMax), sum: big * this.cfg.xxlMax });
         }
+        const acc = this.accentAreas();
+        Object.keys(acc).forEach((k) => {
+          if (/fisch/.test(this.accent[k].pattern) && this.cfg.patternExtra && leistung.indexOf('Verlegung') > -1) out.push({ label: 'Zuschlag ' + PATTERN_NAMES[this.accent[k].pattern] + '-Verlegung (' + (k === 'akzent1' ? 'Akzent 1' : 'Akzent 2') + ')', detail: NUM.format(acc[k].area) + ' m² × ' + EUR.format(this.cfg.patternExtra), sum: acc[k].area * this.cfg.patternExtra });
+        });
         this.opts.forEach((g) => {
           if (!this.groupVisible(g)) return;
           (this.choice[g.name] || []).forEach((id) => {
@@ -1811,6 +2011,7 @@
             l, b, h,
             wallH: mode === 'full' ? h : mode === 'half' ? 1.2 : mode === 'sockel' ? SOCKEL : 0,
             wallMode: mode,
+            accents: ['akzent1', 'akzent2'].filter((k) => this.sel[k] && this.accent[k].zones.length).map((k) => ({ key: k, tile: this.tile3d(this.sel[k]), zones: this.accent[k].zones.slice(), pattern: this.accent[k].pattern })),
             slope: this.slope3d(),
             floor, wall: this.tile3d(this.sel.wand),
             items: this.items3d(),
@@ -1873,13 +2074,13 @@
       }
       renderSlots() {
         const box = this.$('[data-slots]');
-        const slots = this.isBath() ? ['boden', 'wand'] : ['boden'];
-        const name = { boden: this.project() === 'terrasse' ? 'Terrassenplatte' : 'Bodenfliese', wand: 'Wandfliese' };
+        const slots = this.isBath() ? ['boden', 'wand', 'akzent1', 'akzent2'] : ['boden'];
+        const name = { boden: this.project() === 'terrasse' ? 'Terrassenplatte' : 'Bodenfliese', wand: 'Wandfliese', akzent1: 'Akzentfliese 1 (optional)', akzent2: 'Akzentfliese 2 (optional)' };
         box.innerHTML = slots.map((sl) => {
           const sel = this.sel[sl];
           const active = this.slot === sl ? ' is-active' : '';
           if (!sel) {
-            const hint = sl === 'wand' && this.sel.boden ? 'Gleiche wie Boden – hier klicken, um eine andere zu wählen' : (this.slot === sl ? 'Jetzt unten eine Fliese anklicken' : 'Hier klicken, dann Fliese wählen');
+            const hint = sl === 'wand' && this.sel.boden ? 'Gleiche wie Boden – hier klicken, um eine andere zu wählen' : (this.slot === sl ? 'Jetzt unten eine Fliese anklicken' : /akzent/.test(sl) ? 'Eyecatcher z. B. in der Dusche – hier klicken, dann Fliese wählen' : 'Hier klicken, dann Fliese wählen');
             return '<div class="lc-cfg__slot' + active + '" data-slot="' + sl + '"><div><em>' + name[sl] + '</em><span class="lc-cfg__slot-empty">' + hint + '</span></div></div>';
           }
           const v = this.variant(sel);
@@ -1898,6 +2099,18 @@
         box.querySelectorAll('[data-clear]').forEach((el) => el.addEventListener('click', () => {
           this.sel[el.dataset.clear] = null; this.slot = el.dataset.clear; this.renderTiles(); this.update();
         }));
+        this.renderAccent();
+      }
+      renderAccent() {
+        const box = this.$('[data-accent]');
+        const ks = this.isBath() ? ['akzent1', 'akzent2'].filter((k) => this.sel[k]) : [];
+        box.innerHTML = ks.map((k) => {
+          const ac = this.accent[k];
+          return '<fieldset class="lc-cfg__acc"><legend>' + (k === 'akzent1' ? 'Akzentfliese 1' : 'Akzentfliese 2') + ' – wo und wie verlegt?</legend><div class="lc-cfg__acc-zones">' +
+            Object.keys(ZONE_NAMES).map((z) => '<label><input type="checkbox" data-acc-zone="' + k + '|' + z + '"' + (ac.zones.indexOf(z) > -1 ? ' checked' : '') + '> ' + ZONE_NAMES[z] + '</label>').join('') +
+            '</div><label class="lc-cfg__acc-pattern">Verlegemuster <select data-acc-pattern="' + k + '">' +
+            Object.keys(PATTERN_NAMES).map((p) => '<option value="' + p + '"' + (p === ac.pattern ? ' selected' : '') + '>' + PATTERN_NAMES[p] + '</option>').join('') + '</select></label></fieldset>';
+        }).join('');
       }
       renderTiles() {
         const cats = ['Alle'].concat([...new Set(this.tiles.map((p) => p.c))].filter((c) => c !== 'Outdoor' || this.project() === 'terrasse'));
@@ -2107,6 +2320,14 @@
   .lc-cfg__slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .lc-cfg__slot { position: relative; display: flex; gap: 12px; align-items: center; padding: 10px 30px 10px 12px; border: 1px dashed #c9bfae; background: #f7f4ef; cursor: pointer; min-height: 76px; }
   .lc-cfg__slot.is-active { border: 2px solid #111; }
+  .lc-cfg__accent { display: grid; gap: 10px; margin: -6px 0 16px; }
+  .lc-cfg__accent:empty { display: none; }
+  .lc-cfg__acc { border: 1px solid #e4dccf; background: #fbf9f6; padding: 10px 12px; margin: 0; }
+  .lc-cfg__acc legend { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; padding: 0 4px; }
+  .lc-cfg__acc-zones { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; margin-bottom: 8px; }
+  .lc-cfg__acc-zones label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .lc-cfg__acc-pattern { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; }
+  .lc-cfg__acc-pattern select { border: 1px solid #d8cfc0; padding: 6px 8px; font-family: inherit; font-size: 13.5px; background: #fff; }
   .lc-cfg__slot.is-filled { border-style: solid; background: #fff; }
   .lc-cfg__slot img { width: 56px; height: 56px; object-fit: cover; flex: none; }
   .lc-cfg__slot > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
@@ -2239,6 +2460,7 @@
     { "type": "number", "id": "spread", "label": "Spielraum der Gesamtschätzung (%)", "default": 15 },
     { "type": "checkbox", "id": "show_3d", "label": "3D-Vorschau des Raums anzeigen", "info": "Fliesenoberfläche: Metafeld custom.textur_3d (Bild) am Produkt, sonst Produktbild mit „farbe“ im Dateinamen.", "default": true },
     { "type": "header", "content": "Verlegepreise (Schätzung)" },
+    { "type": "number", "id": "pattern_extra", "label": "Zuschlag Fischgrät-Verlegung €/m² (Akzentflächen)", "default": 45 },
     { "type": "number", "id": "lay_min", "label": "Verlegung €/m² von (nur Info)", "default": 40 },
     { "type": "number", "id": "lay_max", "label": "Verlegung Wohnen/Terrasse €/m² (wird gerechnet)", "default": 70 },
     { "type": "number", "id": "lay_bath", "label": "Verlegung Bad €/m² (wird gerechnet)", "default": 200 },
