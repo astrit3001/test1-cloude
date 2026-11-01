@@ -8,7 +8,8 @@
     {%- if s.intro != blank -%}<p class="lc-cfg__intro">{{ s.intro }}</p>{%- endif -%}
 
     <lc-configurator class="lc-cfg" data-wa="{{ wa }}" data-lay-min="{{ s.lay_min }}" data-lay-max="{{ s.lay_max }}" data-xxl-min="{{ s.xxl_min }}" data-xxl-max="{{ s.xxl_max }}" data-lay-bath="{{ s.lay_bath | default: 200 }}" data-bath-from="{{ s.bath_from }}" data-spread="{{ s.spread | default: 15 }}">
-      <script type="text/plain" data-options>{{ s.options }}</script>
+      <script type="text/plain" data-options>{{ s.options }}
+{{ s.options_extra }}</script>
       <script type="application/json" data-tiles>
         [
         {%- assign first = true -%}
@@ -59,6 +60,8 @@
             <button type="button" data-3d-dims aria-pressed="true">Maße</button>
             <button type="button" data-3d-extra="door" aria-pressed="true">Tür</button>
             <button type="button" data-3d-extra="window" aria-pressed="false">Fenster</button>
+            <button type="button" data-3d-snap aria-pressed="true">Fugenraster</button>
+            <button type="button" class="lc-cfg__3d-mode" data-3d-print>Pläne drucken</button>
             <button type="button" data-3d-move aria-pressed="false">Objekte verschieben</button>
             <button type="button" data-3d-reset>Zurücksetzen</button>
             <button type="button" data-3d-save>Als Bild speichern</button>
@@ -228,7 +231,17 @@
     // Sanitärobjekte hängen an einer Wand (wall + pos = Mitte entlang der Wand) und lassen sich verschieben.
     const ITEM_NAMES = { wc: 'WC', bidet: 'Bidet', urinal: 'Urinal', shower: 'Dusche', tub: 'Badewanne', vanity: 'Waschtisch', radiator: 'Handtuchheizkörper', fan: 'Lüfter', door: 'Tür', window: 'Fenster' };
     const WALL_NAMES = { back: 'Rückwand', front: 'Vorderwand', left: 'linke Wand', right: 'rechte Wand' };
+    const CONN_COLORS = { KW: '#1f6fd1', WW: '#d12f2f', MW: '#8a3fd1', AW: '#555555', HZ: '#c2185b', E: '#e09a00' };
+    const CONN_NAMES = { KW: 'Kaltwasser', WW: 'Warmwasser', MW: 'Mischwasser', AW: 'Abwasser', HZ: 'Heizung', E: 'Elektro' };
     const fmtM = (v) => Math.max(0, v).toFixed(2).replace('.', ',') + ' m';
+    const cm = (v) => Math.round(v * 1000) / 10;
+    const cmT = (v) => String(cm(v)).replace('.', ',');
+    // Symmetrische Verlegung: Abstand der ersten Fuge vom Wandanfang, so dass beide Randstücke gleich und möglichst groß sind
+    const tileStart = (len, t) => {
+      const m = (v) => ((v % t) + t) % t;
+      const a = m(len / 2), b = m(len / 2 - t / 2);
+      return (a < 0.001 ? t : a) >= (b < 0.001 ? t : b) ? a : b;
+    };
     // Deckenhöhe an Punkt (x, z): bei Dachschräge steigt sie vom Kniestock k über die Tiefe d bis zur Raumhöhe
     const ceilY = (s, x, z) => {
       const sl = s.slope;
@@ -276,6 +289,10 @@
           this.render();
         });
         this.extra = { door: true, window: false };
+        this.snapOn = true;
+        const snapBtn = box.querySelector('[data-3d-snap]');
+        snapBtn.addEventListener('click', () => { this.snapOn = !this.snapOn; snapBtn.setAttribute('aria-pressed', this.snapOn); });
+        box.querySelector('[data-3d-print]').addEventListener('click', () => this.print(this.meta ? this.meta() : { title: 'Badplanung', facts: [] }));
         box.querySelectorAll('[data-3d-extra]').forEach((b) => b.addEventListener('click', () => {
           const k = b.getAttribute('data-3d-extra');
           this.extra[k] = !this.extra[k];
@@ -374,7 +391,12 @@
             const wall = Object.keys(d).reduce((a, k) => (d[k] < d[a] ? k : a), 'back');
             // Frei im Raum: Objektmitte folgt dem Zeiger, nahe der Wand (< 15 cm) rastet es an der Wand ein
             const dist = d[wall] - drag.userData.d / 2;
-            drag.userData.place = { wall, pos: wall === 'back' || wall === 'front' ? p.x : p.z, dist: dist < 0.15 || drag.userData.wallOnly ? 0 : dist };
+            let pos = wall === 'back' || wall === 'front' ? p.x : p.z;
+            if (this.snapOn && this.wallTex) {
+              const t = this.wallTex.bw / 2, e = tileStart(wall === 'back' || wall === 'front' ? s.l : s.b, t);
+              pos = e + Math.round((pos - e) / (t / 2)) * (t / 2);
+            }
+            drag.userData.place = { wall, pos, dist: dist < 0.15 || drag.userData.wallOnly ? 0 : dist };
             this.put(drag);
             this.active = drag.userData.key;
             this.itemDims();
@@ -470,10 +492,10 @@
       }
       // Fläche bzw. Quader mit Fliesen im echten Maßstab (UVs in Metern / Größe des 2×2-Blocks)
       tiledMat(tex) { return new this.T.MeshStandardMaterial({ map: tex.tex, roughness: tex.gloss ? 0.18 : 0.55 }); }
-      tiledPlane(w, h, tex) {
+      tiledPlane(w, h, tex, ox, oy) {
         const geo = new this.T.PlaneGeometry(w, h);
         const uv = geo.attributes.uv;
-        for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w) / tex.bw, (uv.getY(i) * h) / tex.bh);
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w - (ox || 0)) / tex.bw, (uv.getY(i) * h - (oy || 0)) / tex.bh);
         return new this.T.Mesh(geo, this.tiledMat(tex));
       }
       tiledBox(w, h, d, tex) {
@@ -515,7 +537,8 @@
         });
         if (s.h) g.add(this.walls2d);
         const paint = new T.MeshStandardMaterial({ color: 0xf2efea, roughness: 0.95 });
-        const floor = this.tiledPlane(s.l, s.b, this.texture(s.floor));
+        const ft = this.texture(s.floor);
+        const floor = this.tiledPlane(s.l, s.b, ft, tileStart(s.l, ft.bw / 2), tileStart(s.b, ft.bh / 2));
         floor.rotation.x = -Math.PI / 2;
         floor.position.set(s.l / 2, 0, s.b / 2);
         g.add(floor);
@@ -541,7 +564,8 @@
             if (s.wallH) {
               const geo = shape(() => 0, (y) => Math.min(y, s.wallH));
               const uv = geo.attributes.uv;
-              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
+              const e = tileStart(len, this.wallTex.bw / 2);
+              for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + len / 2 - e) / this.wallTex.bw, uv.getY(i) / this.wallTex.bh);
               add(geo, this.tiledMat(this.wallTex));
             }
             if (top.some(([, y]) => y > s.wallH + 0.001)) add(shape((y) => Math.min(y, s.wallH), (y) => y), paint);
@@ -714,13 +738,22 @@
           else { box(0.37, 0.2, 0.54, ceramic(), 0, 0.32, 0.27); box(0.25, 0.16, 0.01, chrome(), 0, 1.05, 0.005); }
           box(0.38, 0.025, 0.5, ceramic(), 0, 0.435, 0.27);
           o.userData.w = 0.45; o.userData.d = it.stand ? 0.65 : 0.55;
+          o.userData.elev = it.stand ? [[-0.19, 0.19, 0, 0.42], [-0.21, 0.21, 0.46, 0.84]] : [[-0.19, 0.19, 0.2, 0.44], [-0.125, 0.125, 0.97, 1.13]];
+          o.userData.conn = it.stand
+            ? [{ x: 0, y: 0.18, t: 'AW', n: 'Abwasser DN 100 (waagerecht)' }, { x: -0.2, y: 0.15, t: 'KW', n: 'Eckventil Spülkasten' }]
+            : [{ x: 0, y: 0.23, t: 'AW', n: 'Abwasser DN 100' }, { x: 0, y: 1.0, t: 'KW', n: 'Zulauf Spülkasten im Vorwandelement' }];
+          if (it.dusch) o.userData.conn.push({ x: 0.3, y: 0.3, t: 'E', n: 'Steckdose Dusch-WC' });
         } else if (it.key === 'bidet') {
           box(0.36, 0.22, 0.52, ceramic(), 0, 0.31, 0.26);
           cyl(0.015, 0.1, chrome(), 0, 0.47, 0.06);
           o.userData.w = 0.42; o.userData.d = 0.52;
+          o.userData.elev = [[-0.18, 0.18, 0.2, 0.42]];
+          o.userData.conn = [{ x: 0, y: 0.2, t: 'AW', n: 'Abwasser DN 50' }, { x: -0.08, y: 0.4, t: 'WW', n: 'Warmwasser' }, { x: 0.08, y: 0.4, t: 'KW', n: 'Kaltwasser' }];
         } else if (it.key === 'urinal') {
           box(0.34, 0.55, 0.3, ceramic(), 0, 0.85, 0.15);
           o.userData.w = 0.4; o.userData.d = 0.3;
+          o.userData.elev = [[-0.17, 0.17, 0.57, 1.12]];
+          o.userData.conn = [{ x: 0, y: 0.5, t: 'AW', n: 'Abwasser DN 50 (lt. Hersteller)' }, { x: 0, y: 1.2, t: 'KW', n: 'Zulauf (lt. Hersteller)' }];
         } else if (it.key === 'vanity') {
           const vw = it.double ? 1.4 : 0.8;
           box(vw, 0.45, 0.46, m({ color: 0x6f5a45, roughness: 0.6 }), 0, 0.55, 0.23);
@@ -731,6 +764,11 @@
           o.add(mirror);
           if (it.led) box(vw, 0.02, 0.02, m({ color: 0xfff4dc, emissive: 0xfff0d0, emissiveIntensity: 1.2 }), 0, 1.9, 0.02);
           o.userData.w = vw; o.userData.d = 0.5;
+          o.userData.elev = [[-vw / 2, vw / 2, 0.33, 0.83], [-vw / 2, vw / 2, 1.125, 1.875]];
+          o.userData.conn = [];
+          (it.double ? [-0.35, 0.35] : [0]).forEach((x) => o.userData.conn.push({ x: x - 0.1, y: 0.55, t: 'WW', n: 'Warmwasser Waschtisch' }, { x: x + 0.1, y: 0.55, t: 'KW', n: 'Kaltwasser Waschtisch' }, { x, y: 0.55, t: 'AW', n: 'Abwasser DN 40/50' }));
+          o.userData.conn.push({ x: vw / 2 + 0.2, y: 1.1, t: 'E', n: 'Steckdose' });
+          if (it.led) o.userData.conn.push({ x: 0, y: 2.0, t: 'E', n: 'Spiegelleuchte / LED' });
         } else if (it.key === 'shower') {
           const sw = it.w, sd = it.d, gh = Math.min(2, H - 0.05);
           const glass = () => m({ color: 0xd6ecf0, transparent: true, opacity: 0.22, roughness: 0, side: T.DoubleSide, depthWrite: false });
@@ -739,9 +777,30 @@
           if (/Rinne/i.test(it.drain)) box(sw - 0.2, 0.006, 0.07, dark, 0, it.tray ? 0.045 : 0.004, 0.12);
           else if (/Wand/i.test(it.drain)) box(0.4, 0.06, 0.01, dark, 0, 0.08, 0.005);
           else if (!it.tray) box(0.12, 0.006, 0.12, dark, 0, 0.004, sd / 2);
-          // Seitliche Glaswand auf beiden Seiten vorbereitet, put() zeigt die zur Raumseite
-          const side = (x) => { const p = box(0.008, gh, sd, glass(), x, gh / 2, sd / 2); return p; };
+          // Seitliche Glaswand bzw. gemauerte Trennwand (Ytong 11,5 cm, gefliest, mit Nischen) auf beiden Seiten
+          // vorbereitet, put() zeigt die zur Raumseite
+          const tm = /Trennmauer/.test(it.glass);
+          const side = (x) => {
+            const sg = new T.Group();
+            o.add(sg);
+            if (tm) {
+              const wb = this.tiledBox(0.115, gh, sd, this.wallTex);
+              wb.position.set(x - Math.sign(x) * 0.0575, gh / 2, sd / 2);
+              sg.add(wb);
+              for (let i = 0; i < (it.niches || 0); i++) {
+                const n = new T.Mesh(new T.BoxGeometry(0.012, 0.3, 0.3), m({ color: 0x77726b, roughness: 0.8 }));
+                n.position.set(x - Math.sign(x) * 0.121, 1.0 + i * 0.4, sd / 2);
+                sg.add(n);
+              }
+            } else {
+              const gp = new T.Mesh(new T.BoxGeometry(0.008, gh, sd), glass());
+              gp.position.set(x, gh / 2, sd / 2);
+              sg.add(gp);
+            }
+            return sg;
+          };
           o.userData.sides = { plus: side(sw / 2), minus: side(-sw / 2) };
+          if (tm) o.userData.wallPart = o.userData.sides;
           if (/Tür|Schiebe|Nische/i.test(it.glass)) box(sw, gh, 0.008, glass(), 0, gh / 2, sd);
           const big = /40|50/.test(it.head), hand = /Hand/.test(it.head) && !/Regen/.test(it.head);
           if (hand) { box(0.02, 0.9, 0.02, chrome(), sw / 2 - 0.2, 1.4, 0.04); cyl(0.05, 0.02, chrome(), sw / 2 - 0.2, 1.85, 0.1).rotation.x = Math.PI / 2; }
@@ -757,6 +816,12 @@
             if (/Nische/.test(t)) box(0.6, 0.3, 0.012, m({ color: 0x77726b, roughness: 0.8 }), 0, 1.25, 0.006);
           });
           o.userData.w = sw; o.userData.d = sd;
+          o.userData.elev = [[-sw / 2, sw / 2, 0, gh]];
+          o.userData.dash = true;
+          o.userData.conn = [{ x: sw / 2 - 0.275, y: 1.1, t: 'WW', n: 'Armatur Dusche (Unterputz)' }, { x: sw / 2 - 0.125, y: 1.1, t: 'KW', n: 'Armatur Dusche (Unterputz)' }];
+          if (!hand) o.userData.conn.push({ x: 0, y: Math.min(2.2, H - 0.05), t: 'MW', n: 'Kopfbrause' });
+          if (/Wand/i.test(it.drain)) o.userData.conn.push({ x: 0, y: 0.08, t: 'AW', n: 'Wandablauf' });
+          o.userData.floorConn = /Wand/i.test(it.drain) ? [] : [{ x: 0, z: /Rinne/i.test(it.drain) ? 0.12 : sd / 2, t: 'AW', n: /Rinne/i.test(it.drain) ? 'Duschrinne' : it.tray ? 'Ablauf Duschwanne' : 'Bodenablauf Dusche' }];
         } else if (it.key === 'tub') {
           const tl = it.type === 'whirl' ? 1.8 : it.type === 'free' ? 1.6 : 1.7, td = it.type === 'whirl' ? 0.9 : 0.75;
           if (it.type === 'free') {
@@ -773,11 +838,18 @@
           box(tl - 0.22, 0.01, td - 0.2, m({ color: 0xe3ecef, roughness: 0.05 }), 0, it.type === 'free' ? 0.585 : 0.595, td / 2);
           if (it.type === 'whirl') [-0.4, 0, 0.4].forEach((x) => cyl(0.03, 0.012, chrome(), x, 0.6, td - 0.18));
           o.userData.w = tl; o.userData.d = td;
+          o.userData.elev = [[-tl / 2, tl / 2, 0, 0.6]];
+          o.userData.conn = it.type === 'free' ? [] : [{ x: -0.08, y: 0.75, t: 'WW', n: 'Wannenarmatur' }, { x: 0.08, y: 0.75, t: 'KW', n: 'Wannenarmatur' }];
+          if (it.type === 'whirl') o.userData.conn.push({ x: tl / 2 - 0.2, y: 0.3, t: 'E', n: 'Whirlpool (lt. Hersteller)' });
+          o.userData.floorConn = [{ x: -tl / 2 + 0.25, z: td / 2, t: 'AW', n: 'Ab- und Überlauf Wanne' }];
+          if (it.type === 'free') o.userData.floorConn.push({ x: tl / 2 - 0.08, z: td + 0.1, t: 'WW', n: 'Standarmatur' }, { x: tl / 2 - 0.02, z: td + 0.1, t: 'KW', n: 'Standarmatur' });
         } else if (it.key === 'radiator') {
           const mt = chrome();
           [-0.24, 0.24].forEach((x) => box(0.03, 1.2, 0.03, mt, x, 1.1, 0.06));
           for (let y = 0.6; y <= 1.65; y += 0.07) box(0.48, 0.015, 0.015, mt, 0, y, 0.06);
           o.userData.w = 0.5; o.userData.d = 0.1;
+          o.userData.elev = [[-0.25, 0.25, 0.5, 1.7]];
+          o.userData.conn = [{ x: -0.25, y: 0.1, t: 'HZ', n: 'Vorlauf Heizkörper' }, { x: 0.25, y: 0.1, t: 'HZ', n: 'Rücklauf Heizkörper' }];
         } else if (it.key === 'door') {
           const dw = 0.9, dh = Math.min(2.01, H - 0.05);
           const frame = m({ color: 0xf4f2ee, roughness: 0.5 });
@@ -786,6 +858,7 @@
           box(dw, 0.06, 0.03, frame, 0, dh - 0.03, 0.015);
           box(0.12, 0.02, 0.04, chrome(), dw / 2 - 0.15, 1.05, 0.03);
           o.userData.w = dw; o.userData.d = 0.05; o.userData.wallOnly = true;
+          o.userData.elev = [[-dw / 2, dw / 2, 0, dh]]; o.userData.opening = true;
         } else if (it.key === 'window') {
           const ww = 0.9, wh = 1.0, y0 = Math.max(0.3, Math.min(1.0, H - 0.15 - wh));
           const frame = m({ color: 0xffffff, roughness: 0.4 });
@@ -793,18 +866,159 @@
           [[ww, 0.05, 0, y0 + 0.025], [ww, 0.05, 0, y0 + wh - 0.025], [0.05, wh, -ww / 2 + 0.025, y0 + wh / 2], [0.05, wh, ww / 2 - 0.025, y0 + wh / 2]].forEach(([bw, bh, x, y]) => box(bw, bh, 0.04, frame, x, y, 0.02));
           box(ww + 0.1, 0.03, 0.14, frame, 0, y0 - 0.015, 0.07);
           o.userData.w = ww; o.userData.d = 0.12; o.userData.wallOnly = true;
+          o.userData.elev = [[-ww / 2, ww / 2, y0, y0 + wh]]; o.userData.opening = true;
         } else if (it.key === 'fan') {
           cyl(0.1, 0.02, m({ color: 0xffffff, roughness: 0.4 }), 0, H - 0.3, 0.01).rotation.x = Math.PI / 2;
           o.userData.w = 0.2; o.userData.d = 0.05;
+          o.userData.elev = [[-0.1, 0.1, H - 0.4, H - 0.2]];
+          o.userData.conn = [{ x: 0, y: H - 0.3, t: 'E', n: 'Lüfter' }];
         } else return null;
+        o.userData.key = it.key;
         return o;
       }
-      layoutText() {
-        if (!this.items.some((o) => this.place[o.userData.key])) return [];
+      layoutText(all) {
+        if (!all && !this.items.some((o) => this.place[o.userData.key])) return [];
         return this.items.map((o) => {
           const p = o.userData.place, w = o.userData.w;
-          return ITEM_NAMES[o.userData.key] + ' (Breite ' + fmtM(w) + '): ' + WALL_NAMES[p.wall] + ', ' + fmtM(p.pos - w / 2) + ' Abstand ' + (p.wall === 'back' || p.wall === 'front' ? 'von links' : 'von hinten') + (p.dist > 0.04 ? ', frei im Raum ' + fmtM(p.dist) + ' vor der Wand' : ', an der Wand');
+          return ITEM_NAMES[o.userData.key] + ' (Breite ' + fmtM(w) + '): ' + WALL_NAMES[p.wall] + ', ' + fmtM(this.fromLeft(p) - w / 2) + ' ab linker Ecke' + (p.dist > 0.04 ? ', frei im Raum ' + fmtM(p.dist) + ' vor der Wand' : ', an der Wand');
         });
+      }
+      // ---------- Pläne zum Ausdrucken: SVG in cm, Wände so, wie man sie vom Raum aus sieht ----------
+      fromLeft(p) { const s = this.size; return { back: p.pos, front: s.l - p.pos, left: s.b - p.pos, right: p.pos }[p.wall]; }
+      wallLen(wall) { return wall === 'back' || wall === 'front' ? this.size.l : this.size.b; }
+      ceilAt(wall, h) { const s = this.size; const q = { back: [h, 0], front: [s.l - h, s.b], left: [0, s.b - h], right: [s.l, h] }[wall]; return ceilY(s, q[0], q[1]); }
+      onWall(wall) { return this.items.filter((o) => o.userData.place.wall === wall && o.userData.place.dist < 0.05); }
+      svgOpen(x, y, w, h) { return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + [x, y, w, h].join(' ') + '" font-family="Arial, sans-serif">'; }
+      svgDim(x1, y1, x2, y2, t, vert) {
+        const tk = vert ? 'M' + (x1 - 4) + ' ' + y1 + 'h8M' + (x2 - 4) + ' ' + y2 + 'h8' : 'M' + x1 + ' ' + (y1 - 4) + 'v8M' + x2 + ' ' + (y2 - 4) + 'v8';
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        return '<path d="M' + x1 + ' ' + y1 + 'L' + x2 + ' ' + y2 + tk + '" stroke="#8a6a3a" stroke-width="1" fill="none"/>' +
+          '<text x="' + mx + '" y="' + (my - 3) + '" font-size="9" text-anchor="middle" fill="#111"' + (vert ? ' transform="rotate(-90 ' + mx + ' ' + my + ')"' : '') + '>' + t + '</text>';
+      }
+      connMark(x, y, k) {
+        const col = CONN_COLORS[k.t] || '#333';
+        return (k.t === 'AW' ? '<rect x="' + (x - 4) + '" y="' + (y - 4) + '" width="8" height="8" fill="' + col + '"/>' : '<circle cx="' + x + '" cy="' + y + '" r="4.5" fill="' + col + '"/>') +
+          '<text x="' + (x + 6) + '" y="' + (y - 5) + '" font-size="7.5" font-weight="700" fill="' + col + '">' + k.t + (k.y !== undefined ? ' ' + Math.round(k.y * 100) : '') + '</text>';
+      }
+      wallSVG(wall, kind) {
+        const s = this.size, len = this.wallLen(wall), H = s.h, pad = 45;
+        const X = (h) => cm(h), Y = (y) => cm(H - y);
+        const top = [];
+        for (let i = 0; i <= 48; i++) { const h = (i * len) / 48; top.push([h, this.ceilAt(wall, h)]); }
+        const poly = (f) => '0,' + Y(0) + ' ' + top.map(([h, y]) => X(h) + ',' + Y(f(y))).join(' ') + ' ' + X(len) + ',' + Y(0);
+        const id = 'lcw-' + wall + '-' + kind;
+        const tiles = kind === 'tiles';
+        let o = this.svgOpen(-pad, -pad, cm(len) + 2 * pad, cm(H) + 2 * pad);
+        o += '<polygon points="' + poly((y) => y) + '" fill="#fff" stroke="#222" stroke-width="2"/>';
+        const tw = this.wallTex.bw / 2, th = this.wallTex.bh / 2, e = tileStart(len, tw);
+        if (s.wallH) {
+          o += '<clipPath id="' + id + '"><polygon points="' + poly((y) => Math.min(y, s.wallH)) + '"/></clipPath>';
+          o += '<g clip-path="url(#' + id + ')" stroke="' + (tiles ? '#b8955a' : '#e4dccf') + '" stroke-width="' + (tiles ? 0.8 : 0.5) + '">';
+          o += '<polygon points="' + poly((y) => Math.min(y, s.wallH)) + '" fill="' + (tiles ? '#f7f4ef' : '#fcfbf9') + '" stroke="none"/>';
+          for (let x = e; x < len - 0.001; x += tw) if (x > 0.001) o += '<line x1="' + X(x) + '" y1="' + Y(0) + '" x2="' + X(x) + '" y2="' + Y(s.wallH) + '"/>';
+          for (let y = th; y < s.wallH - 0.001; y += th) o += '<line x1="0" y1="' + Y(y) + '" x2="' + X(len) + '" y2="' + Y(y) + '"/>';
+          o += '</g>';
+        }
+        this.onWall(wall).forEach((it) => {
+          const u = it.userData, c = this.fromLeft(u.place);
+          (u.elev || []).forEach(([x0, x1, y0, y1]) => {
+            o += '<rect x="' + X(c + x0) + '" y="' + Y(y1) + '" width="' + cm(x1 - x0) + '" height="' + cm(y1 - y0) + '" fill="' + (u.opening ? '#eef3f6' : u.dash ? 'none' : '#fff') + '" stroke="#222" stroke-width="1.2"' + (u.dash ? ' stroke-dasharray="6 4"' : '') + '/>';
+          });
+          const yTop = Math.max.apply(null, (u.elev || [[0, 0, 0, 0.5]]).map((r) => r[3]));
+          o += '<text x="' + X(c) + '" y="' + (Y(yTop) - 4) + '" font-size="9" text-anchor="middle" fill="#111">' + ITEM_NAMES[u.key] + '</text>';
+          o += '<text x="' + X(c) + '" y="' + (Y(0) + 11) + '" font-size="7.5" text-anchor="middle" fill="#8a6a3a">Mitte ' + cmT(c) + '</text>';
+          if (!tiles) (u.conn || []).forEach((k) => { o += this.connMark(X(c + k.x), Y(k.y), k); });
+        });
+        o += this.svgDim(0, Y(0) + 24, X(len), Y(0) + 24, fmtM(len));
+        o += this.svgDim(-24, Y(0), -24, Y(H), fmtM(H), true);
+        if (tiles && s.wallH) o += '<text x="0" y="' + (Y(0) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(tw) + ' × ' + cmT(th) + ' cm · Randstück links und rechts ' + cmT(e < 0.001 ? tw : e) + ' cm' + (s.wallH < H - 0.01 ? ' · gefliest bis ' + fmtM(s.wallH) : '') + '</text>';
+        return o + '</svg>';
+      }
+      floorSVG(kind) {
+        const T = this.T, s = this.size, pad = 45, tiles = kind === 'tiles';
+        let o = this.svgOpen(-pad, -pad, cm(s.l) + 2 * pad, cm(s.b) + 2 * pad);
+        if (s.h) o += '<rect x="-10" y="-10" width="' + (cm(s.l) + 20) + '" height="' + (cm(s.b) + 20) + '" fill="#2b2926"/>';
+        o += '<rect x="0" y="0" width="' + cm(s.l) + '" height="' + cm(s.b) + '" fill="' + (tiles ? '#f7f4ef' : '#fff') + '"/>';
+        const ft = this.texture(s.floor), tw = ft.bw / 2, th = ft.bh / 2, ex = tileStart(s.l, tw), ez = tileStart(s.b, th);
+        o += '<g stroke="' + (tiles ? '#b8955a' : '#e4dccf') + '" stroke-width="' + (tiles ? 0.8 : 0.5) + '">';
+        for (let x = ex; x < s.l - 0.001; x += tw) if (x > 0.001) o += '<line x1="' + cm(x) + '" y1="0" x2="' + cm(x) + '" y2="' + cm(s.b) + '"/>';
+        for (let z = ez; z < s.b - 0.001; z += th) if (z > 0.001) o += '<line x1="0" y1="' + cm(z) + '" x2="' + cm(s.l) + '" y2="' + cm(z) + '"/>';
+        o += '</g>';
+        if (s.slope) {
+          const sl = s.slope, de = Math.min(sl.d, sl.side === 'back' || sl.side === 'front' ? s.b : s.l);
+          const ln = { back: [0, de, s.l, de], front: [0, s.b - de, s.l, s.b - de], left: [de, 0, de, s.b], right: [s.l - de, 0, s.l - de, s.b] }[sl.side].map(cm);
+          o += '<line x1="' + ln[0] + '" y1="' + ln[1] + '" x2="' + ln[2] + '" y2="' + ln[3] + '" stroke="#8a6a3a" stroke-width="1.2" stroke-dasharray="8 5"/>';
+          o += '<text x="' + (ln[0] + ln[2]) / 2 + '" y="' + ((ln[1] + ln[3]) / 2 - 4) + '" font-size="8" text-anchor="middle" fill="#8a6a3a">Dachschräge – volle Höhe ab hier · Kniestock ' + fmtM(sl.k) + '</text>';
+        }
+        this.items.forEach((it) => {
+          it.updateMatrixWorld(true);
+          const u = it.userData, w = u.w, d = u.d;
+          const W = (x, z) => new T.Vector3(x, 0, z).applyMatrix4(it.matrixWorld);
+          o += '<polygon points="' + [[-w / 2, 0], [w / 2, 0], [w / 2, d], [-w / 2, d]].map(([x, z]) => { const q = W(x, z); return cm(q.x) + ',' + cm(q.z); }).join(' ') + '" fill="' + (u.opening ? '#eef3f6' : 'rgba(255,255,255,.85)') + '" stroke="#222" stroke-width="1.2"/>';
+          if (u.wallPart) ['plus', 'minus'].forEach((k) => {
+            if (!u.wallPart[k].visible) return;
+            const bb = new T.Box3().setFromObject(u.wallPart[k]);
+            o += '<rect x="' + cm(bb.min.x) + '" y="' + cm(bb.min.z) + '" width="' + cm(bb.max.x - bb.min.x) + '" height="' + cm(bb.max.z - bb.min.z) + '" fill="#9a948b"/>';
+          });
+          if (u.key === 'door') {
+            const arc = [];
+            for (let i = 0; i <= 16; i++) { const t = (i / 16) * Math.PI / 2; const q = W(-w / 2 + w * Math.cos(t), w * Math.sin(t)); arc.push(cm(q.x) + ',' + cm(q.z)); }
+            const hq = W(-w / 2, 0);
+            o += '<polyline points="' + arc.join(' ') + ' ' + cm(hq.x) + ',' + cm(hq.z) + '" fill="none" stroke="#8a6a3a" stroke-width="1"/>';
+          }
+          const cq = W(0, d / 2);
+          o += '<text x="' + cm(cq.x) + '" y="' + (cm(cq.z) + 3) + '" font-size="9" text-anchor="middle" fill="#111">' + ITEM_NAMES[u.key] + '</text>';
+          if (kind === 'conn') (u.floorConn || []).forEach((k) => { const q = W(k.x, k.z); o += this.connMark(cm(q.x), cm(q.z), { t: k.t }); });
+        });
+        o += this.svgDim(0, cm(s.b) + 24, cm(s.l), cm(s.b) + 24, fmtM(s.l));
+        o += this.svgDim(-24, 0, -24, cm(s.b), fmtM(s.b), true);
+        if (tiles) o += '<text x="0" y="' + (cm(s.b) + 40) + '" font-size="8" fill="#8a6a3a">Fliese ' + cmT(tw) + ' × ' + cmT(th) + ' cm · Randstücke ' + cmT(ex < 0.001 ? tw : ex) + ' cm (links/rechts) und ' + cmT(ez < 0.001 ? th : ez) + ' cm (vorne/hinten)</text>';
+        return o + '</svg>';
+      }
+      connRows() {
+        const rows = [];
+        this.items.forEach((it) => {
+          const u = it.userData, p = u.place, c = this.fromLeft(p);
+          it.updateMatrixWorld(true);
+          (u.conn || []).forEach((k) => rows.push([ITEM_NAMES[u.key], k.t, k.n, p.dist < 0.05 ? WALL_NAMES[p.wall] : 'frei im Raum – nach Absprache', p.dist < 0.05 ? cmT(c + k.x) + ' cm ab linker Ecke' : '–', Math.round(k.y * 100) + ' cm']));
+          (u.floorConn || []).forEach((k) => {
+            const q = new this.T.Vector3(k.x, 0, k.z).applyMatrix4(it.matrixWorld);
+            rows.push([ITEM_NAMES[u.key], k.t, k.n, 'Boden', cmT(q.x) + ' cm ab linker Wand, ' + cmT(q.z) + ' cm ab Rückwand', 'Boden']);
+          });
+        });
+        return rows;
+      }
+      print(meta) {
+        if (!this.renderer || !this.size) return;
+        // Für das Titelbild kurz die 3D-Ansicht rendern
+        const mode = this.mode;
+        this.mode = '3d'; this.camera = this.persp; this.render();
+        const img = this.renderer.domElement.toDataURL('image/png');
+        this.mode = mode; this.camera = mode === '2d' ? this.ortho : this.persp; this.render();
+        const s = this.size, walls = s.h ? ['back', 'right', 'front', 'left'] : [];
+        const date = new Date().toLocaleDateString('de-DE');
+        const head = (t) => '<header><b>LunaCeram · ' + t + '</b><span>' + esc(meta.title) + ' · ' + date + '</span></header>';
+        const fig = (w, kind) => '<figure><figcaption>' + WALL_NAMES[w] + ' (vom Raum aus gesehen)</figcaption>' + this.wallSVG(w, kind) + '</figure>';
+        const legend = '<p class="lc-print__legend">' + Object.keys(CONN_COLORS).map((k) => '<i class="' + (k === 'AW' ? 'sq' : '') + '" style="background:' + CONN_COLORS[k] + '"></i>' + k + ' ' + CONN_NAMES[k]).join(' ') + ' · Zahlen = Höhe in cm über Oberkante Fertigfußboden (OKFF)</p>';
+        const rows = this.connRows();
+        let h = '<div class="lc-print">';
+        h += '<section>' + head('Badplanung') + '<h1>' + esc(meta.title) + '</h1><dl>' + meta.facts.map(([k, v]) => '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>').join('') + '</dl><img src="' + img + '" alt=""><h2>Grundriss</h2><div class="lc-print__floor">' + this.floorSVG('plan') + '</div></section>';
+        h += '<section>' + head('Fliesenverlegeplan') + '<h2>Boden</h2><div class="lc-print__floor">' + this.floorSVG('tiles') + '</div>' + (walls.length ? '<h2>Wände</h2><div class="lc-print__walls">' + walls.map((w) => fig(w, 'tiles')).join('') + '</div>' : '') +
+          '<p class="lc-print__note">Symmetrische Verlegung mit gleichen Randstücken an beiden Enden, Fugenbreite nicht berücksichtigt. Planungshilfe – vor Ausführung am Bau prüfen.</p></section>';
+        if (rows.length) {
+          h += '<section>' + head('Anschlussplan Sanitär, Heizung & Elektro') + legend + (walls.length ? '<div class="lc-print__walls">' + walls.map((w) => fig(w, 'conn')).join('') + '</div>' : '') +
+            '<h2>Boden</h2><div class="lc-print__floor lc-print__floor--small">' + this.floorSVG('conn') + '</div>' +
+            '<table><thead><tr><th>Objekt</th><th>Art</th><th>Anschluss</th><th>Wand</th><th>Lage</th><th>Höhe</th></tr></thead><tbody>' + rows.map((r) => '<tr>' + r.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table>' +
+            '<p class="lc-print__note">Anschlusshöhen sind typische Richtwerte und ersetzen nicht die Montageanleitungen der Hersteller – vor der Rohinstallation mit dem gewählten Produkt abgleichen. Elektroarbeiten nur durch eine Elektrofachkraft, Schutzbereiche nach DIN VDE 0100-701 beachten.</p></section>';
+        }
+        h += '</div>';
+        const wrap = document.createElement('div');
+        wrap.innerHTML = h;
+        const node = wrap.firstChild;
+        document.body.appendChild(node);
+        const done = () => { node.remove(); window.removeEventListener('afterprint', done); };
+        window.addEventListener('afterprint', done);
+        setTimeout(() => window.print(), 60);
       }
       render() {
         if (!this.renderer || !this.size) return;
@@ -871,7 +1085,10 @@
         this.next = this.$('[data-next]');
         this.back = this.$('[data-back]');
         this.room3d = this.$('[data-3d]') ? new LcRoom3D(this.$('[data-3d]')) : null;
-        if (this.room3d) this.room3d.onLayout = () => { if (this.flow[this.idx] === 'anfrage') this.summary(); };
+        if (this.room3d) {
+          this.room3d.onLayout = () => { if (this.flow[this.idx] === 'anfrage') this.summary(); };
+          this.room3d.meta = () => this.printMeta();
+        }
         this.addEventListener('change', (e) => {
           if (e.target.name === 'lc-projekt') this.onProject();
           if (e.target.dataset.opt !== undefined) this.onOption(e.target);
@@ -908,6 +1125,10 @@
           if (!g) { g = { name: group, step, proj, multi: type === 'multi', items: [] }; groups.push(g); }
           g.items.push({ id: 'o' + i, proj, label, price: parseFloat(min) || parseFloat(max) || 0, unit: unit || 'pauschal' });
         });
+        // Nischen-Gruppe direkt hinter die Duschabtrennung stellen (kommt aus den Zusatzoptionen am Ende)
+        const tm = groups.findIndex((g) => /Trennmauer/.test(g.name));
+        const ab = groups.findIndex((g) => g.name === 'Duschabtrennung');
+        if (tm > -1 && ab > -1 && tm > ab + 1) groups.splice(ab + 1, 0, groups.splice(tm, 1)[0]);
         return groups;
       }
       project() { const r = this.$('input[name="lc-projekt"]:checked'); return r ? r.value : ''; }
@@ -921,6 +1142,11 @@
       }
       groupVisible(g) {
         if (!this.projectFits(g)) return false;
+        // Nischen gibt es nur zusammen mit einer gemauerten Trennwand
+        if (/Trennmauer/.test(g.name)) {
+          const ab = this.opts.find((x) => x.name === 'Duschabtrennung');
+          return !!ab && this.groupVisible(ab) && this.labels('Duschabtrennung').some((t) => /Trennmauer/.test(t));
+        }
         if (g.name !== 'Dusche' && /^Dusch/.test(g.name)) {
           const d = this.opts.find((x) => x.name === 'Dusche');
           return !!(d && this.choice[d.name] && this.choice[d.name].length);
@@ -937,7 +1163,7 @@
         } else {
           this.choice[g.name] = el.value ? [el.value] : [];
         }
-        if (g.name === 'Dusche') this.renderOptions('A');
+        if (g.name === 'Dusche' || g.name === 'Duschabtrennung') this.renderOptions('A');
       }
       onProject() {
         const bath = this.isBath();
@@ -1058,6 +1284,19 @@
         if (k === 'leistung') return !!this.$('input[name="lc-leistung"]:checked');
         return true;
       }
+      printMeta() {
+        const a = this.areas(), sl = this.isBath() && this.slope3d();
+        const tile = (sel) => (sel ? esc(clean(sel.p.t)) + ' · ' + esc(this.variant(sel).t) : 'noch nicht gewählt');
+        const facts = [];
+        if (this.isBath()) facts.push(['Raum', fmtM(this.num('[data-m="l"]')) + ' × ' + fmtM(this.num('[data-m="b"]')) + ', Höhe ' + fmtM(this.num('[data-m="h"]') || 2.5)]);
+        facts.push(['Flächen', 'Boden ' + NUM.format(a.floor) + ' m²' + (a.wall ? ' · Wand ' + NUM.format(a.wall) + ' m²' : '')]);
+        if (sl) facts.push(['Dachschräge', { back: 'hinten', front: 'vorne', left: 'links', right: 'rechts' }[sl.side] + ', Kniestock ' + fmtM(sl.k) + ', reicht ' + fmtM(sl.d) + ' in den Raum']);
+        facts.push(['Bodenfliese', tile(this.sel.boden)]);
+        if (this.isBath()) facts.push(['Wandfliese', tile(this.sel.wand || this.sel.boden)]);
+        const lay = this.room3d.layoutText(true);
+        if (lay.length) facts.push(['Aufteilung', lay.map(esc).join('<br>')]);
+        return { title: { komplettbad: 'Komplettbadsanierung', bad: 'Bad neu fliesen', wohnen: 'Küche & Wohnbereich', terrasse: 'Terrasse & Pool' }[this.project()] || 'Planung', facts };
+      }
       slope3d() {
         const side = this.$('[data-m="slope"]').value;
         if (!side) return null;
@@ -1127,7 +1366,7 @@
         const decided = this.project() === 'komplettbad' && this.maxIdx >= this.flow.indexOf('ausstattung');
         const out = [];
         const wc = L('WC')[0] || (sanQ('WC') ? 'WC' : '');
-        if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc) });
+        if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc), dusch: /Dusch-WC/.test(wc) });
         L('WC-Extras').forEach((t) => { if (/Bidet/.test(t)) out.push({ key: 'bidet' }); if (/Urinal/.test(t)) out.push({ key: 'urinal' }); });
         const dusche = L('Dusche');
         if (dusche.length || !decided) {
@@ -1136,6 +1375,7 @@
             key: 'shower', w: size ? +size[1] / 100 : 0.9, d: size ? +size[2] / 100 : 0.9,
             tray: dusche.some((t) => /Duschwanne/.test(t)) && !dusche.some((t) => /Bodengleich/.test(t)),
             drain: L('Duschablauf')[0] || '', head: L('Duschbrause')[0] || '', glass: L('Duschabtrennung')[0] || '', extras: L('Dusch-Extras'),
+            niches: /Trennmauer/.test(L('Duschabtrennung')[0] || '') ? +(((L('Nischen in der Trennmauer')[0] || '').match(/\d+/) || [0])[0]) : 0,
           });
         }
         const wanne = L('Badewanne')[0] || (sanQ('Badewannen') ? (/freistehend/i.test(sanT('Badewannen')) ? 'Freistehende Badewanne' : 'Einbauwanne') : '');
@@ -1357,6 +1597,34 @@
   .lc-cfg__row, .lc-cfg__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
   .lc-cfg__row--4 { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .lc-cfg__row--slope { margin-top: 12px; }
+  .lc-print { display: none; }
+  @media print {
+    html, body { background: #fff !important; }
+    body > *:not(.lc-print) { display: none !important; }
+    .lc-print { display: block; font-family: Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .lc-print section { break-after: page; page-break-after: always; }
+    .lc-print section:last-child { break-after: auto; page-break-after: auto; }
+    .lc-print header { display: flex; justify-content: space-between; border-bottom: 2px solid #b8955a; padding-bottom: 4px; margin-bottom: 8px; font-size: 11px; }
+    .lc-print h1 { font-size: 20px; margin: 4px 0 8px; }
+    .lc-print h2 { font-size: 11px; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .12em; color: #8a6a3a; }
+    .lc-print dl { display: grid; grid-template-columns: 110px 1fr; gap: 2px 10px; font-size: 10.5px; margin: 0 0 8px; }
+    .lc-print dt { color: #8a6a3a; }
+    .lc-print dd { margin: 0; }
+    .lc-print img { display: block; width: 100%; max-height: 90mm; object-fit: contain; border: 1px solid #ddd; }
+    .lc-print svg { display: block; width: 100%; height: auto; }
+    .lc-print__floor svg { max-height: 105mm; }
+    .lc-print__floor--small svg { max-height: 60mm; }
+    .lc-print__walls { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+    .lc-print__walls svg { max-height: 60mm; }
+    .lc-print figure { margin: 0; break-inside: avoid; }
+    .lc-print figcaption { font-size: 10px; font-weight: 700; margin-bottom: 2px; }
+    .lc-print table { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 6px; }
+    .lc-print th, .lc-print td { border-bottom: 1px solid #ddd; padding: 3px 4px; text-align: left; vertical-align: top; }
+    .lc-print__note, .lc-print__legend { font-size: 9px; color: #555; }
+    .lc-print__legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; vertical-align: -1px; }
+    .lc-print__legend i.sq { border-radius: 0; }
+    @page { size: A4; margin: 12mm; }
+  }
   .lc-cfg__field[hidden] { display: none; }
   .lc-cfg__field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: #6f675c; }
   .lc-cfg__field--full { margin-top: 12px; }
@@ -1499,6 +1767,13 @@
       "label": "Ausstattung & Leistungen mit Preisen",
       "info": "Eine Zeile pro Option: Schritt (A = Ausstattung, L = Leistung) | Projekte (bad, innen, alle) | Gruppe | single oder multi | Bezeichnung | Preis von (wird gerechnet) | Preis bis (nur Info) | Einheit (pauschal, m2_boden, m2_wand, m2_fliesen)",
       "default": "A|bad|WC|single|Stand-WC mit Aufputz-Spülkasten|400|900|pauschal\nA|bad|WC|single|Wand-WC mit Vorwandelement & Unterputz-Spülkasten|900|2000|pauschal\nA|bad|WC|single|Dusch-WC (WC mit Bidet-Funktion)|2000|4500|pauschal"
+    },
+    {
+      "type": "textarea",
+      "id": "options_extra",
+      "label": "Weitere Optionen (gleiches Format)",
+      "info": "Wird an die Liste oben angehängt. Gruppen mit „Trennmauer“ im Namen erscheinen nur, wenn bei der Duschabtrennung eine Trennmauer gewählt ist.",
+      "default": "A|bad|Duschabtrennung|single|Trennmauer aus Ytong (gemauert, je Maß)|700|700|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|1 Nische|200|200|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|2 Nischen|400|400|pauschal\nA|bad|Nischen in der Trennmauer (zum Verfliesen)|single|3 Nischen|600|600|pauschal"
     },
     { "type": "header", "content": "Bilder der Projektarten" },
     { "type": "image_picker", "id": "img_komplett", "label": "Komplettbadsanierung" },
