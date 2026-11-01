@@ -1,0 +1,768 @@
+{%- liquid
+  assign s = section.settings
+  assign wa = s.whatsapp | remove: '+' | remove: ' '
+-%}
+<section id="konfigurator" class="lc-section lc-cfg-section" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
+  <div class="lc-wrap">
+    {%- if s.title != blank -%}<div class="lc-heading"><h2>{{ s.title }}</h2></div>{%- endif -%}
+    {%- if s.intro != blank -%}<p class="lc-cfg__intro">{{ s.intro }}</p>{%- endif -%}
+
+    <lc-configurator class="lc-cfg" data-wa="{{ wa }}" data-lay-min="{{ s.lay_min }}" data-lay-max="{{ s.lay_max }}" data-xxl-min="{{ s.xxl_min }}" data-xxl-max="{{ s.xxl_max }}" data-lay-bath="{{ s.lay_bath | default: 200 }}" data-bath-from="{{ s.bath_from }}" data-spread="{{ s.spread | default: 15 }}">
+      <script type="text/plain" data-options>{{ s.options }}</script>
+      <script type="application/json" data-tiles>
+        [
+        {%- assign first = true -%}
+        {%- for i in (1..5) -%}
+          {%- assign key = 'col_tiles_' | append: i -%}
+          {%- assign col = s[key] -%}
+          {%- if col != blank -%}
+            {%- for p in col.products limit: s.per_collection -%}
+              {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
+              {"id":{{ p.id }},"c":{{ col.title | json }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"vs":[
+                {%- for v in p.variants limit: 30 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
+              ]}
+            {%- endfor -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {%- if s.col_outdoor != blank -%}
+          {%- for p in s.col_outdoor.products limit: s.per_collection -%}
+            {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
+            {"id":{{ p.id }},"c":"Outdoor","t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"vs":[
+              {%- for v in p.variants limit: 30 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"a":{% if v.unit_price_measurement.measured_type == 'area' %}true{% else %}false{% endif %},"ok":{{ v.available }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
+            ]}
+          {%- endfor -%}
+        {%- endif -%}
+        ]
+      </script>
+      <script type="application/json" data-sanitary>
+        [
+        {%- if s.col_sanitary != blank -%}
+          {%- paginate s.col_sanitary.products by 100 -%}
+          {%- for p in s.col_sanitary.products -%}
+            {"id":{{ p.id }},"t":{{ p.title | json }},"v":{{ p.vendor | json }},"u":{{ p.url | json }},"tags":{{ p.tags | json }},"pt":{{ p.type | json }},"img":{{ p.featured_image | image_url: width: 400 | json }},"vs":[
+              {%- for v in p.variants limit: 20 -%}{"id":{{ v.id }},"t":{{ v.title | json }},"p":{{ v.price }},"ok":{{ v.available }}}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}
+            ]}{%- unless forloop.last -%},{%- endunless -%}
+          {%- endfor -%}
+          {%- endpaginate -%}
+        {%- endif -%}
+        ]
+      </script>
+
+      <ol class="lc-cfg__progress" data-progress></ol>
+
+      <div class="lc-cfg__step is-active" data-step="projekt">
+        <h3>Was planen Sie?</h3>
+        <div class="lc-cfg__projects">
+          <label class="lc-cfg__project lc-cfg__project--hero">
+            <input type="radio" name="lc-projekt" value="komplettbad" data-bath>
+            <span>
+              {%- if s.img_komplett != blank -%}{{ s.img_komplett | image_url: width: 900 | image_tag: loading: 'lazy', alt: '' }}{%- endif -%}
+              <em class="lc-cfg__badge">Rundum-sorglos</em>
+              <strong>Komplettbadsanierung</strong>
+              <small>Alles neu: Rückbau, Sanitär, Installation, Fliesen & Verlegung</small>
+              <b class="lc-cfg__from">Jetzt planen &rarr;</b>
+            </span>
+          </label>
+          <label class="lc-cfg__project">
+            <input type="radio" name="lc-projekt" value="bad" data-bath>
+            <span>{%- if s.img_bad != blank -%}{{ s.img_bad | image_url: width: 600 | image_tag: loading: 'lazy', alt: '' }}{%- endif -%}<strong>Bad neu fliesen</strong><small>Nur Boden- & Wandfliesen, auf Wunsch mit Verlegung – ohne Umbau</small></span>
+          </label>
+          <label class="lc-cfg__project">
+            <input type="radio" name="lc-projekt" value="wohnen">
+            <span>{%- if s.img_wohnen != blank -%}{{ s.img_wohnen | image_url: width: 600 | image_tag: loading: 'lazy', alt: '' }}{%- endif -%}<strong>Küche & Wohnbereich</strong><small>Bodenfliesen, Großformate</small></span>
+          </label>
+          <label class="lc-cfg__project">
+            <input type="radio" name="lc-projekt" value="terrasse">
+            <span>{%- if s.img_terrasse != blank -%}{{ s.img_terrasse | image_url: width: 600 | image_tag: loading: 'lazy', alt: '' }}{%- endif -%}<strong>Terrasse & Pool</strong><small>2 cm Terrassenplatten</small></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="lc-cfg__step" data-step="masse">
+        <h3>Wie groß ist die Fläche?</h3>
+        <div data-bath-only>
+          <div class="lc-cfg__row lc-cfg__row--4">
+            <label class="lc-cfg__field"><span>Länge (m)</span><input type="number" min="0.5" step="0.05" inputmode="decimal" placeholder="z. B. 3,0" data-m="l"></label>
+            <label class="lc-cfg__field"><span>Breite (m)</span><input type="number" min="0.5" step="0.05" inputmode="decimal" placeholder="z. B. 2,5" data-m="b"></label>
+            <label class="lc-cfg__field"><span>Raumhöhe (m)</span><input type="number" min="1.8" step="0.05" inputmode="decimal" value="2.50" data-m="h"></label>
+            <label class="lc-cfg__field"><span>Wandfliesen</span>
+              <select data-m="wall"><option value="full">raumhoch</option><option value="half">halbhoch (1,20 m)</option><option value="none">keine Wandfliesen</option></select>
+            </label>
+          </div>
+        </div>
+        <div data-area-only>
+          <div class="lc-cfg__row">
+            <label class="lc-cfg__field"><span>Fläche in m²</span><input type="number" min="1" step="0.5" inputmode="decimal" placeholder="z. B. 30" data-m="area"></label>
+          </div>
+        </div>
+        <div class="lc-cfg__calc" data-calc hidden></div>
+      </div>
+
+      <div class="lc-cfg__step" data-step="ausstattung">
+        <h3>Ausstattung & Sanitärarbeiten</h3>
+        <p class="lc-cfg__sub">Was soll in Ihr neues Bad? Die Preise sind Richtwerte inkl. Montage – Sie sehen die Schätzung unten sofort.</p>
+        <div data-opt-a></div>
+      </div>
+
+      <div class="lc-cfg__step" data-step="fliesen">
+        <h3>Wählen Sie Ihre Fliese</h3>
+        <div class="lc-cfg__slots" data-slots></div>
+        <div class="lc-cfg__chips" data-tile-filter></div>
+        <div class="lc-cfg__grid-products" data-tile-grid></div>
+        <label class="lc-cfg__skip"><input type="checkbox" data-tile-skip> Ich möchte mich zur Fliesenauswahl beraten lassen</label>
+      </div>
+
+      <div class="lc-cfg__step" data-step="sanitaer">
+        <h3>Waschtisch, Badewanne, WC & Badmöbel von Ilbagno (APE Grupo)</h3>
+        <p class="lc-cfg__sub">Wählen Sie konkrete Produkte – oder überspringen Sie diesen Schritt.</p>
+        <div class="lc-cfg__chips" data-san-filter></div>
+        <div class="lc-cfg__grid-products" data-san-grid></div>
+      </div>
+
+      <div class="lc-cfg__step" data-step="leistung">
+        <h3>Was dürfen wir übernehmen?</h3>
+        <div class="lc-cfg__options lc-cfg__options--two">
+          <label class="lc-cfg__opt lc-cfg__opt--big"><input type="radio" name="lc-leistung" value="Material + Verlegung durch Unik Fliesen"><span><strong>Material + Verlegung</strong><small>Fachgerecht verlegt von Unik Fliesen – inkl. Verfugung & Silikonfugen. Ein Ansprechpartner von der Planung bis zur Übergabe.</small></span></label>
+          <label class="lc-cfg__opt lc-cfg__opt--big"><input type="radio" name="lc-leistung" value="Nur Material"><span><strong>Nur Material</strong><small>Lieferung, Verlegung organisiere ich selbst</small></span></label>
+        </div>
+        <h4>Vorarbeiten, Heizung & Extras</h4>
+        <div data-opt-l></div>
+      </div>
+
+      <div class="lc-cfg__step" data-step="anfrage">
+        <div class="lc-cfg__summary-head">
+          <h3>Ihre Übersicht</h3>
+          <button type="button" class="lc-cfg__change" data-goto="0">Auswahl ändern</button>
+        </div>
+        <p class="lc-cfg__sub">Tipp: Oben auf einen Schritt klicken, um ihn direkt zu ändern – Ihre Eingaben bleiben erhalten.</p>
+        <div class="lc-cfg__bathnote" data-bathnote hidden>
+          <strong>Komplettbadsanierung</strong>
+          <span>Alles aus einer Hand: Material, Sanitär, Installation und Verlegung. Den genauen Preis erhalten Sie nach Besichtigung bzw. anhand Ihrer Fotos.</span>
+        </div>
+        <div class="lc-cfg__summary" data-summary></div>
+
+        <div class="lc-cfg__photos">
+          <strong>Fotos von Ihrem Bad / Ihrer Fläche</strong>
+          <p>Mit Fotos können wir Ihr Angebot deutlich genauer kalkulieren. Senden Sie uns Ihre Konfiguration per WhatsApp und hängen Sie die Fotos direkt im Chat an.</p>
+          {%- if wa != blank -%}<a class="lc-btn lc-cfg__wa" data-wa-link href="https://wa.me/{{ wa }}" target="_blank" rel="noopener">Konfiguration + Fotos per WhatsApp senden</a>{%- endif -%}
+        </div>
+
+        {%- form 'contact', class: 'lc-cfg__form', id: 'LcConfiguratorForm' -%}
+          {%- if form.posted_successfully? -%}
+            <p class="lc-cfg__ok">Vielen Dank! Ihre Anfrage ist bei uns eingegangen – wir melden uns schnellstmöglich.</p>
+          {%- endif -%}
+          {%- if form.errors -%}
+            <p class="lc-cfg__err">Bitte prüfen Sie Ihre Angaben: {{ form.errors | default_errors }}</p>
+          {%- endif -%}
+          <h4>Oder Angebot per E-Mail anfordern</h4>
+          <input type="hidden" name="contact[Konfiguration]" data-f="config">
+          <input type="hidden" name="contact[Geschätzte Kosten]" data-f="total">
+          <div class="lc-cfg__grid">
+            <label class="lc-cfg__field"><span>Name *</span><input type="text" name="contact[name]" autocomplete="name" required></label>
+            <label class="lc-cfg__field"><span>E-Mail *</span><input type="email" name="contact[email]" autocomplete="email" required></label>
+            <label class="lc-cfg__field"><span>Telefon</span><input type="tel" name="contact[phone]" autocomplete="tel"></label>
+            <label class="lc-cfg__field"><span>PLZ / Projektort *</span><input type="text" name="contact[PLZ Projektort]" autocomplete="postal-code" required></label>
+            <label class="lc-cfg__field"><span>Gewünschter Zeitraum</span><input type="text" name="contact[Zeitraum]" placeholder="z. B. Frühjahr 2027"></label>
+          </div>
+          <label class="lc-cfg__field lc-cfg__field--full"><span>Nachricht</span><textarea name="contact[body]" rows="3" placeholder="Untergrund, Besonderheiten, Wünsche …"></textarea></label>
+          <label class="lc-cfg__consent"><input type="checkbox" required> <span>Ich bin einverstanden, dass meine Angaben zur Bearbeitung der Anfrage verwendet werden. Hinweise in der <a href="{{ s.privacy_url | default: '/policies/privacy-policy' }}">Datenschutzerklärung</a>.</span></label>
+          <div class="lc-cfg__actions">
+            <button type="submit" class="lc-btn">Angebot anfordern</button>
+            <button type="button" class="lc-btn lc-btn--light lc-cfg__cartbtn" data-cart hidden>Material in den Warenkorb</button>
+          </div>
+        {%- endform -%}
+      </div>
+
+      <div class="lc-cfg__nav">
+        <button type="button" class="lc-cfg__back" data-back hidden>&larr; Zurück</button>
+        <span class="lc-cfg__live" data-live></span>
+        <button type="button" class="lc-btn lc-cfg__next" data-next disabled>Weiter</button>
+      </div>
+    </lc-configurator>
+  </div>
+</section>
+
+{% javascript %}
+  if (!customElements.get('lc-configurator')) {
+    const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    const EUR2 = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+    const NUM = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 });
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const clean = (t) => String(t).replace(/\s*[–-]\s*Preis pro (m²|m2|Stück)\s*$/i, '');
+    const short = (c) => String(c).split(' – ')[0].replace(/^Fliesen in /, '').replace('Beton- & Zementoptik', 'Betonoptik');
+    const range = (a, b) => (a === b ? EUR.format(a) : EUR.format(a) + ' – ' + EUR.format(b));
+    const r100 = (v) => Math.round(v / 100) * 100;
+    const SAN_CATS = ['Waschtische', 'Badewannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Zubehör'];
+    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör' };
+    const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
+    const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche' };
+
+    customElements.define('lc-configurator', class extends HTMLElement {
+      connectedCallback() {
+        this.$ = (q) => this.querySelector(q);
+        this.tiles = this.readJSON('[data-tiles]');
+        const seen = {};
+        this.tiles = this.tiles.filter((p) => (seen[p.id] ? false : (seen[p.id] = true)));
+        this.sanitary = this.readJSON('[data-sanitary]');
+        this.opts = this.parseOptions(this.$('[data-options]').textContent);
+        this.cfg = { layMax: +this.dataset.layMax || 0, layBath: +this.dataset.layBath || 0, xxlMax: +this.dataset.xxlMax || 0, bathFrom: +this.dataset.bathFrom || 0, spread: this.dataset.spread === undefined ? 15 : +this.dataset.spread };
+        this.choice = {};
+        this.sel = { boden: null, wand: null, san: {} };
+        this.slot = 'boden';
+        this.tileFilter = 'Alle';
+        this.sanFilter = 'Alle';
+        this.idx = 0;
+        this.maxIdx = 0;
+        this.next = this.$('[data-next]');
+        this.back = this.$('[data-back]');
+        this.addEventListener('change', (e) => {
+          if (e.target.name === 'lc-projekt') this.onProject();
+          if (e.target.dataset.opt !== undefined) this.onOption(e.target);
+          this.update();
+        });
+        this.addEventListener('input', () => this.update());
+        this.next.addEventListener('click', () => this.go(this.idx + 1));
+        this.back.addEventListener('click', () => this.go(this.idx - 1));
+        this.$('[data-progress]').addEventListener('click', (e) => {
+          const li = e.target.closest('li[data-i]');
+          if (li && +li.dataset.i <= this.maxIdx) this.go(+li.dataset.i, true);
+        });
+        this.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => this.go(+b.dataset.goto, true)));
+        this.$('[data-cart]').addEventListener('click', () => this.addToCart());
+        this.flow = ['projekt', 'masse', 'fliesen', 'leistung', 'anfrage'];
+        this.$('[data-bath-only]').hidden = true;
+        this.renderProgress();
+        if (this.querySelector('.lc-cfg__ok, .lc-cfg__err')) { this.flow = ['anfrage']; this.go(0, true); return; }
+        const pick = (v) => {
+          const r = v && this.querySelector('input[name="lc-projekt"][value="' + v + '"]');
+          if (r) { r.checked = true; this.onProject(); this.go(0, true); this.update(); }
+        };
+        if (location.hash.indexOf('#konfigurator-') === 0) setTimeout(() => pick(location.hash.slice(14)), 400);
+        window.addEventListener('hashchange', () => { if (location.hash.indexOf('#konfigurator-') === 0) pick(location.hash.slice(14)); });
+      }
+      readJSON(q) { try { return JSON.parse(this.$(q).textContent); } catch (e) { return []; } }
+      parseOptions(txt) {
+        const groups = [];
+        String(txt).split(/\n/).forEach((line, i) => {
+          const p = line.split('|').map((x) => x.trim());
+          if (p.length < 8 || !p[4]) return;
+          const [step, proj, group, type, label, min, max, unit] = p;
+          let g = groups.find((x) => x.name === group && x.step === step);
+          if (!g) { g = { name: group, step, proj, multi: type === 'multi', items: [] }; groups.push(g); }
+          g.items.push({ id: 'o' + i, proj, label, price: parseFloat(min) || parseFloat(max) || 0, unit: unit || 'pauschal' });
+        });
+        return groups;
+      }
+      project() { const r = this.$('input[name="lc-projekt"]:checked'); return r ? r.value : ''; }
+      isBath() { const r = this.$('input[name="lc-projekt"]:checked'); return !!(r && r.hasAttribute('data-bath')); }
+      projectFits(g) { return this.projFits(g.proj); }
+      projFits(p) {
+        if (p === 'alle') return true;
+        if (p === 'bad') return this.project() === 'komplettbad';
+        if (p === 'innen') return this.project() !== 'terrasse';
+        return true;
+      }
+      groupVisible(g) {
+        if (!this.projectFits(g)) return false;
+        if (g.name !== 'Dusche' && /^Dusch/.test(g.name)) {
+          const d = this.opts.find((x) => x.name === 'Dusche');
+          return !!(d && this.choice[d.name] && this.choice[d.name].length);
+        }
+        return true;
+      }
+      onOption(el) {
+        const g = this.opts.find((x) => x.name === el.dataset.group && x.step === el.dataset.step);
+        if (!g) return;
+        if (g.multi) {
+          const cur = new Set(this.choice[g.name] || []);
+          if (el.checked) cur.add(el.value); else cur.delete(el.value);
+          this.choice[g.name] = [...cur];
+        } else {
+          this.choice[g.name] = el.value ? [el.value] : [];
+        }
+        if (g.name === 'Dusche') this.renderOptions('A');
+      }
+      onProject() {
+        const bath = this.isBath();
+        this.flow = this.project() === 'komplettbad' ? ['projekt', 'masse', 'ausstattung', 'fliesen', 'sanitaer', 'leistung', 'anfrage'] : ['projekt', 'masse', 'fliesen', 'leistung', 'anfrage'];
+        this.maxIdx = Math.min(this.maxIdx, this.flow.length - 1);
+        this.$('[data-bath-only]').hidden = !bath;
+        this.$('[data-area-only]').hidden = bath;
+        if (this.project() === 'komplettbad') {
+          const r = this.$('input[name="lc-leistung"]'); if (r) r.checked = true;
+          this.opts.filter((g) => g.step === 'L' && g.name === 'Vorarbeiten').forEach((g) => { this.choice[g.name] = g.items.slice(0, 2).map((i) => i.id); });
+        }
+        if (!bath) this.sel.wand = null;
+        this.slot = 'boden';
+        this.tileFilter = this.project() === 'terrasse' ? 'Outdoor' : 'Alle';
+        this.renderProgress();
+        this.renderOptions('A');
+        this.renderOptions('L');
+        this.renderTiles();
+        this.renderSanitary();
+      }
+      renderOptions(step) {
+        const box = this.$(step === 'A' ? '[data-opt-a]' : '[data-opt-l]');
+        if (!box) return;
+        box.innerHTML = this.opts.filter((g) => g.step === step && this.groupVisible(g)).map((g) => {
+          const chosen = this.choice[g.name] || [];
+          const name = 'lc-o-' + step + '-' + g.name.replace(/\W+/g, '');
+          const item = (it) => {
+            const price = it.price ? 'ca. ' + EUR.format(it.price) + UNIT[it.unit] : 'inklusive';
+            return '<label class="lc-cfg__oitem"><input type="' + (g.multi ? 'checkbox' : 'radio') + '" name="' + name + '" value="' + it.id + '" data-opt data-group="' + esc(g.name) + '" data-step="' + step + '"' + (chosen.indexOf(it.id) > -1 ? ' checked' : '') + '><span><b>' + esc(it.label) + '</b><small>' + price + '</small></span></label>';
+          };
+          const none = g.multi ? '' : '<label class="lc-cfg__oitem lc-cfg__oitem--none"><input type="radio" name="' + name + '" value="" data-opt data-group="' + esc(g.name) + '" data-step="' + step + '"' + (!chosen.length ? ' checked' : '') + '><span><b>Nicht benötigt</b><small>–</small></span></label>';
+          return '<fieldset class="lc-cfg__ogroup"><legend>' + esc(g.name) + (g.multi ? ' <i>(mehrere möglich)</i>' : '') + '</legend><div class="lc-cfg__oitems">' + none + g.items.filter((it) => this.projFits(it.proj)).map(item).join('') + '</div></fieldset>';
+        }).join('');
+      }
+      num(sel) { const el = this.$(sel); return el ? parseFloat(String(el.value).replace(',', '.')) || 0 : 0; }
+      areas() {
+        if (this.isBath()) {
+          const l = this.num('[data-m="l"]'), b = this.num('[data-m="b"]'), h = this.num('[data-m="h"]') || 2.5;
+          const mode = this.$('[data-m="wall"]').value;
+          const floor = l * b;
+          const wh = mode === 'full' ? h : mode === 'half' ? 1.2 : 0;
+          const wall = wh && floor ? Math.max(0, 2 * (l + b) * wh - 2.5) : 0;
+          return { floor, wall };
+        }
+        return { floor: this.num('[data-m="area"]'), wall: 0 };
+      }
+      pieceM2(t) { const m = String(t).match(/(\d+(?:[.,]\d+)?)\s*[×x]\s*(\d+(?:[.,]\d+)?)\s*cm/i); return m ? (parseFloat(m[1].replace(',', '.')) * parseFloat(m[2].replace(',', '.'))) / 10000 : 0; }
+      isLarge(sel) {
+        if (!sel) return false;
+        const v = this.variant(sel);
+        const m = String(v.t + ' ' + sel.p.t).match(/(\d+)\s*[×x]\s*(\d+)/);
+        return !v.a || (m && Math.max(+m[1], +m[2]) >= 120);
+      }
+      need(m2) { return m2 > 0 ? Math.ceil(m2 * 1.1) : 0; }
+      variant(s) { if (!s) return null; return s.p.vs.find((v) => v.id === s.vid) || s.p.vs[0]; }
+      lines() {
+        const out = [];
+        const a = this.areas();
+        const add = (label, sel, m2) => {
+          if (!sel || !m2) return;
+          const v = this.variant(sel);
+          const pc = v.a ? 0 : this.pieceM2(v.t + ' ' + sel.p.t);
+          const qty = v.a ? this.need(m2) : (pc ? Math.ceil((m2 * 1.1) / pc) : 0);
+          out.push({ label, title: clean(sel.p.t), vt: v.t + (pc ? ' · ' + NUM.format(pc) + ' m² je Platte' : ''), vid: v.id, qty, unit: v.a ? 'm²' : 'Stk', price: v.p, sum: qty * v.p, area: v.a });
+        };
+        add('Bodenfliese', this.sel.boden, a.floor);
+        if (this.isBath()) add('Wandfliese', this.sel.wand || this.sel.boden, a.wall);
+        Object.values(this.sel.san).forEach((x) => {
+          const v = x.p.vs.find((vv) => vv.id === x.vid) || x.p.vs[0];
+          out.push({ label: 'Sanitär', title: x.p.t, vt: v.t === 'Default Title' ? '' : v.t, vid: v.id, qty: x.q, unit: 'Stk', price: v.p, sum: x.q * v.p, area: false });
+        });
+        return out;
+      }
+      total() { return this.lines().reduce((s, l) => s + l.sum, 0); }
+      services() {
+        const a = this.areas();
+        const tiles = a.floor + a.wall;
+        const out = [];
+        const leistung = (this.$('input[name="lc-leistung"]:checked') || {}).value || '';
+        const lay = this.isBath() && this.cfg.layBath ? this.cfg.layBath : this.cfg.layMax;
+        if (leistung.indexOf('Verlegung') > -1 && tiles > 0 && lay) {
+          out.push({ label: 'Fliesenverlegung inkl. Verfugung & Silikon', detail: NUM.format(tiles) + ' m² Boden- & Wandfläche', sum: tiles * lay });
+          const big = [['boden', a.floor], ['wand', a.wall]].reduce((s, [k, m]) => s + (this.isLarge(k === 'wand' ? (this.sel.wand || this.sel.boden) : this.sel.boden) ? m : 0), 0);
+          if (big > 0 && this.cfg.xxlMax) out.push({ label: 'Zuschlag Großformat-Verlegung', detail: NUM.format(big) + ' m² × ' + EUR.format(this.cfg.xxlMax), sum: big * this.cfg.xxlMax });
+        }
+        this.opts.forEach((g) => {
+          if (!this.groupVisible(g)) return;
+          (this.choice[g.name] || []).forEach((id) => {
+            const it = g.items.find((x) => x.id === id);
+            if (!it || !this.projFits(it.proj)) return;
+            const qty = it.unit === 'm2_boden' ? a.floor : it.unit === 'm2_wand' ? a.wall : it.unit === 'm2_fliesen' ? tiles : 1;
+            out.push({ label: g.name + ': ' + it.label, detail: it.unit === 'pauschal' ? 'pauschal' : NUM.format(qty) + ' m² × ' + EUR.format(it.price), sum: it.price * qty });
+          });
+        });
+        return out;
+      }
+      estimate() {
+        const mat = this.total() / 100;
+        const sv = this.services();
+        const svSum = sv.reduce((s, x) => s + x.sum, 0);
+        let base = mat + svSum;
+        const floored = false;
+        const min = r100(base);
+        const max = r100(base * (1 + this.cfg.spread / 100));
+        return { mat, sv, svSum, base, min, max, floored };
+      }
+      renderProgress() {
+        this.$('[data-progress]').innerHTML = this.flow.map((k, i) => {
+          const cls = (i === this.idx ? 'is-active' : i < this.idx ? 'is-done' : '') + (i <= this.maxIdx && i !== this.idx ? ' is-link' : '');
+          return '<li class="' + cls + '" data-i="' + i + '"' + (i <= this.maxIdx ? ' role="button" tabindex="0"' : '') + '>' + LABELS[k] + '</li>';
+        }).join('');
+      }
+      valid() {
+        const k = this.flow[this.idx];
+        if (k === 'projekt') return !!this.project();
+        if (k === 'masse') return this.areas().floor > 0;
+        if (k === 'fliesen') return !!this.sel.boden || this.$('[data-tile-skip]').checked;
+        if (k === 'leistung') return !!this.$('input[name="lc-leistung"]:checked');
+        return true;
+      }
+      update() {
+        const a = this.areas();
+        const calc = this.$('[data-calc]');
+        if (a.floor > 0) {
+          calc.hidden = false;
+          calc.innerHTML = '<div><span>Bodenfläche</span><b>' + NUM.format(a.floor) + ' m²</b></div>' +
+            (this.isBath() ? '<div><span>Wandfläche</span><b>' + NUM.format(a.wall) + ' m²</b></div>' : '') +
+            '<div><span>Bedarf inkl. 10 % Verschnitt</span><b>' + (this.need(a.floor) + this.need(a.wall)) + ' m²</b></div>';
+        } else calc.hidden = true;
+        const e = this.estimate();
+        this.$('[data-live]').innerHTML = this.project() ? '<small>Ihr aktueller Wert</small> <b data-live-v>' + EUR.format(Math.round(e.base)) + '</b>' : '';
+        this.next.disabled = !this.valid();
+        if (this.flow[this.idx] === 'sanitaer') this.next.textContent = Object.keys(this.sel.san).length ? 'Weiter' : 'Überspringen';
+        else this.next.textContent = 'Weiter';
+        this.renderSlots();
+      }
+      go(n, force) {
+        if (n < 0 || n >= this.flow.length) return;
+        if (n > this.idx && !force && !this.valid()) return;
+        this.idx = n;
+        this.maxIdx = Math.max(this.maxIdx, n);
+        const k = this.flow[n];
+        this.querySelectorAll('.lc-cfg__step').forEach((s) => s.classList.toggle('is-active', s.dataset.step === k));
+        this.back.hidden = n === 0;
+        this.next.hidden = n === this.flow.length - 1;
+        if (k === 'ausstattung') this.renderOptions('A');
+        if (k === 'leistung') this.renderOptions('L');
+        if (k === 'fliesen') this.renderTiles();
+        if (k === 'sanitaer') this.renderSanitary();
+        if (k === 'anfrage') this.summary();
+        this.renderProgress();
+        this.update();
+        window.scrollTo({ top: this.getBoundingClientRect().top + window.scrollY - 120, behavior: 'smooth' });
+      }
+      renderSlots() {
+        const box = this.$('[data-slots]');
+        const slots = this.isBath() ? ['boden', 'wand'] : ['boden'];
+        const name = { boden: this.project() === 'terrasse' ? 'Terrassenplatte' : 'Bodenfliese', wand: 'Wandfliese' };
+        box.innerHTML = slots.map((sl) => {
+          const sel = this.sel[sl];
+          const active = this.slot === sl ? ' is-active' : '';
+          if (!sel) {
+            const hint = sl === 'wand' && this.sel.boden ? 'Gleiche wie Boden – hier klicken, um eine andere zu wählen' : (this.slot === sl ? 'Jetzt unten eine Fliese anklicken' : 'Hier klicken, dann Fliese wählen');
+            return '<div class="lc-cfg__slot' + active + '" data-slot="' + sl + '"><div><em>' + name[sl] + '</em><span class="lc-cfg__slot-empty">' + hint + '</span></div></div>';
+          }
+          const v = this.variant(sel);
+          const opts = sel.p.vs.map((vv) => '<option value="' + vv.id + '"' + (vv.id === v.id ? ' selected' : '') + '>' + esc(vv.t) + ' – ' + EUR2.format(vv.p / 100) + (vv.a ? '/m²' : '/Stk') + '</option>').join('');
+          return '<div class="lc-cfg__slot is-filled' + active + '" data-slot="' + sl + '"><img src="' + sel.p.img + '" alt=""><div><em>' + name[sl] + '</em><strong>' + esc(clean(sel.p.t)) + '</strong>' +
+            (sel.p.vs.length > 1 ? '<select data-variant="' + sl + '">' + opts + '</select>' : '<span>' + EUR2.format(v.p / 100) + (v.a ? '/m²' : '/Stk') + '</span>') +
+            '</div><button type="button" class="lc-cfg__x" data-clear="' + sl + '" aria-label="Entfernen">×</button></div>';
+        }).join('');
+        box.querySelectorAll('[data-slot]').forEach((el) => el.addEventListener('click', (e) => {
+          if (e.target.closest('select, button')) return;
+          this.slot = el.dataset.slot; this.renderSlots();
+        }));
+        box.querySelectorAll('[data-variant]').forEach((el) => el.addEventListener('change', (e) => {
+          e.stopPropagation(); this.sel[el.dataset.variant].vid = parseInt(el.value, 10); this.update();
+        }));
+        box.querySelectorAll('[data-clear]').forEach((el) => el.addEventListener('click', () => {
+          this.sel[el.dataset.clear] = null; this.slot = el.dataset.clear; this.renderTiles(); this.update();
+        }));
+      }
+      renderTiles() {
+        const cats = ['Alle'].concat([...new Set(this.tiles.map((p) => p.c))].filter((c) => c !== 'Outdoor' || this.project() === 'terrasse'));
+        const f = this.$('[data-tile-filter]');
+        f.innerHTML = cats.map((c) => '<button type="button" class="' + (c === this.tileFilter ? 'is-active' : '') + '" data-c="' + esc(c) + '">' + esc(short(c)) + '</button>').join('');
+        f.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { this.tileFilter = b.dataset.c; this.renderTiles(); }));
+        const list = this.tiles.filter((p) => this.tileFilter === 'Alle' ? (p.c !== 'Outdoor' || this.project() === 'terrasse') : p.c === this.tileFilter);
+        const chosen = [this.sel.boden, this.sel.wand].filter(Boolean).map((x) => x.p.id);
+        const grid = this.$('[data-tile-grid]');
+        grid.innerHTML = list.map((p) => {
+          const min = Math.min.apply(null, p.vs.map((v) => v.p));
+          const area = p.vs.some((v) => v.a);
+          return '<button type="button" class="lc-cfg__prod' + (chosen.indexOf(p.id) > -1 ? ' is-selected' : '') + '" data-tile="' + p.id + '">' +
+            '<span class="lc-cfg__prod-img">' + (p.img ? '<img loading="lazy" src="' + p.img + '" alt="">' : '') + '</span>' +
+            '<span class="lc-cfg__prod-v">' + esc(p.v) + '</span><span class="lc-cfg__prod-t">' + esc(clean(p.t)) + '</span>' +
+            '<span class="lc-cfg__prod-p">' + (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) + (area ? '/m²' : '/Stk') + '</span></button>';
+        }).join('') || '<p class="lc-cfg__sub">Keine Produkte in dieser Kategorie.</p>';
+        grid.querySelectorAll('[data-tile]').forEach((b) => b.addEventListener('click', () => {
+          const p = this.tiles.find((x) => x.id === parseInt(b.dataset.tile, 10));
+          const v = p.vs.find((vv) => vv.ok) || p.vs[0];
+          this.sel[this.slot] = { p, vid: v.id };
+          this.$('[data-tile-skip]').checked = false;
+          if (this.isBath() && this.slot === 'boden' && !this.sel.wand) this.slot = 'wand';
+          this.renderTiles(); this.update();
+          this.$('[data-slots]').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }));
+      }
+      sanCat(p) { return SAN_TYPE[p.pt] || SAN_CATS.find((c) => p.tags.indexOf(c) > -1) || 'Zubehör'; }
+      renderSanitary() {
+        const grid = this.$('[data-san-grid]');
+        const cats = ['Alle'].concat(SAN_CATS.filter((c) => this.sanitary.some((p) => this.sanCat(p) === c)));
+        const f = this.$('[data-san-filter]');
+        f.innerHTML = cats.map((c) => '<button type="button" class="' + (c === this.sanFilter ? 'is-active' : '') + '" data-c="' + c + '">' + c + '</button>').join('');
+        f.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { this.sanFilter = b.dataset.c; this.renderSanitary(); }));
+        const list = this.sanitary.filter((p) => this.sanFilter === 'Alle' || this.sanCat(p) === this.sanFilter);
+        grid.innerHTML = list.map((p) => {
+          const s = this.sel.san[p.id];
+          const min = Math.min.apply(null, p.vs.map((v) => v.p));
+          const opts = p.vs.length > 1 ? '<select data-svar="' + p.id + '">' + p.vs.map((v) => '<option value="' + v.id + '"' + (s && s.vid === v.id ? ' selected' : '') + '>' + esc(v.t) + ' – ' + EUR2.format(v.p / 100) + '</option>').join('') + '</select>' : '';
+          return '<div class="lc-cfg__prod lc-cfg__prod--san' + (s ? ' is-selected' : '') + '">' +
+            '<span class="lc-cfg__prod-img">' + (p.img ? '<img loading="lazy" src="' + p.img + '" alt="">' : '') + '</span>' +
+            '<span class="lc-cfg__prod-v">' + esc(this.sanCat(p)) + '</span><span class="lc-cfg__prod-t">' + esc(p.t) + '</span>' +
+            '<span class="lc-cfg__prod-p">' + (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) + '</span>' + (s ? opts : '') +
+            '<span class="lc-cfg__qty">' + (s ? '<button type="button" data-q="-1" data-id="' + p.id + '">−</button><b>' + s.q + '</b><button type="button" data-q="1" data-id="' + p.id + '">+</button>' : '<button type="button" class="lc-cfg__add" data-q="1" data-id="' + p.id + '">Hinzufügen</button>') + '</span></div>';
+        }).join('');
+        grid.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
+          const id = parseInt(b.dataset.id, 10);
+          const p = this.sanitary.find((x) => x.id === id);
+          const cur = this.sel.san[id] || { p, vid: p.vs[0].id, q: 0 };
+          cur.q += parseInt(b.dataset.q, 10);
+          if (cur.q <= 0) delete this.sel.san[id]; else this.sel.san[id] = cur;
+          this.renderSanitary(); this.update();
+        }));
+        grid.querySelectorAll('[data-svar]').forEach((el) => el.addEventListener('change', () => { this.sel.san[el.dataset.svar].vid = parseInt(el.value, 10); this.update(); }));
+      }
+      summary() {
+        const a = this.areas();
+        const lines = this.lines();
+        const total = this.total();
+        const est = this.estimate();
+        const leistung = (this.$('input[name="lc-leistung"]:checked') || {}).value || '';
+        const projName = { komplettbad: 'Komplettbadsanierung', bad: 'Bad neu fliesen', wohnen: 'Küche & Wohnbereich', terrasse: 'Terrasse & Pool' }[this.project()] || '';
+        this.$('[data-bathnote]').hidden = this.project() !== 'komplettbad';
+        let html = '<div class="lc-cfg__estimate"><span>Geschätzte Gesamtkosten</span><b>' + range(est.min, est.max) + '</b><small>Unverbindliche Schätzung inkl. MwSt. – der verbindliche Preis folgt nach Besichtigung bzw. anhand Ihrer Fotos.</small></div>';
+        html += '<dl class="lc-cfg__facts"><div><dt>Projekt</dt><dd>' + projName + '</dd></div><div><dt>Fläche</dt><dd>Boden ' + NUM.format(a.floor) + ' m²' + (a.wall ? ' · Wand ' + NUM.format(a.wall) + ' m²' : '') + '</dd></div><div><dt>Leistung</dt><dd>' + esc(leistung) + '</dd></div></dl>';
+        html += '<h4>Material</h4>';
+        if (lines.length) {
+          html += '<table class="lc-cfg__table"><thead><tr><th>Position</th><th>Menge</th><th>Preis</th><th>Summe</th></tr></thead><tbody>' +
+            lines.map((l) => '<tr><td><small>' + l.label + '</small>' + esc(l.title) + (l.vt ? '<br><small>' + esc(l.vt) + '</small>' : '') + '</td><td>' + (l.area ? l.qty + ' m²' : (l.qty ? l.qty + ' Stk' : 'nach Plan')) + '</td><td>' + EUR2.format(l.price / 100) + (l.area ? '/m²' : '/Stk') + '</td><td>' + (l.sum ? EUR2.format(l.sum / 100) : '–') + '</td></tr>').join('') +
+            '</tbody><tfoot><tr><td colspan="3">Material (exakt, inkl. MwSt.)</td><td>' + EUR2.format(total / 100) + '</td></tr></tfoot></table>';
+        } else {
+          html += '<p class="lc-cfg__sub">Noch keine Produkte gewählt – wir beraten Sie gern.</p>';
+        }
+        if (est.sv.length) {
+          html += '<h4>Ausstattung, Installation & Verlegung (Schätzung)</h4><table class="lc-cfg__table lc-cfg__table--sv"><tbody>' +
+            est.sv.map((s) => '<tr><td>' + esc(s.label) + '<br><small>' + esc(s.detail) + '</small></td><td>ca. ' + EUR.format(Math.round(s.sum)) + '</td></tr>').join('') +
+            '</tbody><tfoot><tr><td>Arbeitsleistungen & Ausstattung</td><td>ca. ' + EUR.format(Math.round(est.svSum)) + '</td></tr></tfoot></table>';
+        }
+        html += '<p class="lc-cfg__note">Die Gesamtschätzung enthält ' + this.cfg.spread + ' % Spielraum. Fliesenmengen inkl. ca. 10 % Verschnitt. XXL-Platten zzgl. Spezialtransport. Ausstattungspreise sind Richtwerte inkl. Montage und Standard-Material.</p>';
+        this.$('[data-summary]').innerHTML = html;
+        const svText = est.sv.map((s) => '- ' + s.label + ' (' + s.detail + '): ca. ' + EUR.format(Math.round(s.sum))).join('\n');
+        const text = 'Projekt: ' + projName + '\nBoden: ' + NUM.format(a.floor) + ' m²' + (a.wall ? ', Wand: ' + NUM.format(a.wall) + ' m²' : '') + '\nLeistung: ' + leistung + '\n' +
+          (lines.length ? 'Material:\n' + lines.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + (l.area ? ', ' + l.qty + ' m²' : (l.qty ? ', ' + l.qty + ' Stk' : '')) + (l.sum ? ' = ' + EUR2.format(l.sum / 100) : '')).join('\n') + '\n' : '') +
+          (svText ? 'Ausstattung & Leistungen:\n' + svText + '\n' : '') +
+          'Geschätzt gesamt: ' + range(est.min, est.max);
+        this.$('[data-f="config"]').value = text;
+        this.$('[data-f="total"]').value = range(est.min, est.max);
+        const wa = this.$('[data-wa-link]');
+        if (wa) wa.href = 'https://wa.me/' + this.dataset.wa + '?text=' + encodeURIComponent('Guten Tag, hier meine Konfiguration von lunaceram.com:\n' + text + '\nProjektort/PLZ: \nFotos hänge ich an.');
+        this.$('[data-cart]').hidden = !lines.some((l) => l.qty > 0);
+      }
+      async addToCart() {
+        const items = this.lines().filter((l) => l.qty > 0).map((l) => ({ id: l.vid, quantity: l.qty }));
+        if (!items.length) return;
+        const btn = this.$('[data-cart]');
+        btn.disabled = true; btn.textContent = 'Wird hinzugefügt …';
+        try {
+          const r = await fetch('/cart/add.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+          if (!r.ok) throw new Error('cart');
+          window.location.href = '/cart';
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'Material in den Warenkorb';
+          alert('Einige Artikel konnten nicht hinzugefügt werden. Bitte fragen Sie das Angebot an.');
+        }
+      }
+    });
+  }
+{% endjavascript %}
+
+{% stylesheet %}
+  .lc-cfg__intro { text-align: center; max-width: 720px; margin: -10px auto 24px; color: #6f675c; font-size: 15px; line-height: 1.6; }
+  .lc-cfg { display: block; background: #fff; border: 1px solid #e4dccf; border-top: 2px solid #b8955a; border-radius: 4px; padding: 28px clamp(14px, 3.5vw, 40px) 22px; max-width: 1160px; margin: 0 auto; }
+  .lc-cfg__progress { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 24px; }
+  .lc-cfg__progress li { flex: 1; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #9a9184; padding-top: 10px; border-top: 3px solid #e4dccf; user-select: none; }
+  .lc-cfg__progress li.is-active { color: #111; border-color: #111; font-weight: 700; }
+  .lc-cfg__progress li.is-done { color: #8a6a3a; border-color: #b8955a; }
+  .lc-cfg__progress li.is-link { cursor: pointer; }
+  .lc-cfg__progress li.is-link:hover, .lc-cfg__progress li.is-link:focus-visible { color: #111; border-color: #111; outline: none; text-decoration: underline; text-underline-offset: 4px; }
+  .lc-cfg__summary-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lc-cfg__summary-head h3 { margin: 0; }
+  .lc-cfg__change { background: #fff; border: 2px solid #111; color: #111; padding: 9px 16px; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; font-family: inherit; }
+  .lc-cfg__change:hover { background: #111; color: #fff; }
+  .lc-cfg__summary-head + .lc-cfg__sub { margin: 8px 0 16px; }
+  .lc-cfg__step { display: none; }
+  .lc-cfg__step.is-active { display: block; animation: lcFade .3s ease; }
+  @keyframes lcFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .lc-cfg h3 { font-size: clamp(22px, 2.6vw, 28px); margin: 0 0 16px; color: #111; }
+  .lc-cfg h4 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; margin: 22px 0 10px; color: #8a6a3a; font-family: inherit; font-weight: 600; }
+  .lc-cfg__sub { color: #6f675c; font-size: 14px; margin: -8px 0 14px; }
+  .lc-cfg__projects { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 989px) { .lc-cfg__projects { grid-template-columns: 1fr 1fr; } .lc-cfg__project--hero { grid-column: 1 / -1; } }
+  .lc-cfg__project { position: relative; cursor: pointer; }
+  .lc-cfg__project input { position: absolute; opacity: 0; pointer-events: none; }
+  .lc-cfg__project > span { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; min-height: 220px; padding: 16px; border-radius: 4px; overflow: hidden; color: #fff; background: #222; border: 2px solid transparent; transition: border-color .2s; }
+  .lc-cfg__project img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transition: transform .5s; }
+  .lc-cfg__project > span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,.1) 70%); z-index: 1; }
+  .lc-cfg__project strong, .lc-cfg__project small, .lc-cfg__project b, .lc-cfg__project em { position: relative; z-index: 2; }
+  .lc-cfg__project strong { font-family: var(--lc-serif, serif); font-weight: 400; font-size: 21px; line-height: 1.15; }
+  .lc-cfg__project small { font-size: 13px; color: #e9e1d6; }
+  .lc-cfg__project:hover img { transform: scale(1.04); }
+  .lc-cfg__project input:checked + span { border-color: #b8955a; box-shadow: 0 0 0 3px rgba(184,149,90,.35); }
+  .lc-cfg__project--hero > span { min-height: 260px; }
+  .lc-cfg__project--hero strong { font-size: 27px; }
+  .lc-cfg__badge { align-self: flex-start; font-style: normal; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; background: #b8955a; color: #111; padding: 5px 8px; margin-bottom: auto; }
+  .lc-cfg__from { font-family: inherit; font-weight: 600; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #d4b47a; margin-top: 8px; }
+  .lc-cfg__options { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .lc-cfg__options--two { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .lc-cfg__opt { position: relative; cursor: pointer; }
+  .lc-cfg__opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .lc-cfg__opt span { display: flex; flex-direction: column; justify-content: center; min-height: 64px; padding: 12px 14px; border: 1px solid #d8cfc0; border-radius: 2px; background: #f7f4ef; font-size: 15px; color: #1c1b19; transition: all .15s ease; }
+  .lc-cfg__opt span small { color: #6f675c; font-size: 12px; margin-top: 2px; }
+  .lc-cfg__opt--big span { min-height: 92px; gap: 4px; }
+  .lc-cfg__opt--big strong { font-size: 17px; }
+  .lc-cfg__opt:hover span { border-color: #b8955a; }
+  .lc-cfg__opt input:checked + span { background: #111; border-color: #111; color: #fff; }
+  .lc-cfg__opt input:checked + span small { color: #d4b47a; }
+  .lc-cfg__row, .lc-cfg__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .lc-cfg__row--4 { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .lc-cfg__field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: #6f675c; }
+  .lc-cfg__field--full { margin-top: 12px; }
+  .lc-cfg__field input, .lc-cfg__field textarea, .lc-cfg__field select, .lc-cfg__slot select, .lc-cfg__prod select { border: 1px solid #d8cfc0; border-radius: 2px; padding: 10px 12px; font-size: 16px; background: #fff; color: #111; font-family: inherit; width: 100%; box-sizing: border-box; }
+  .lc-cfg__calc { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; background: #e4dccf; border: 1px solid #e4dccf; margin-top: 16px; }
+  .lc-cfg__calc div { background: #f7f4ef; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+  .lc-cfg__calc span { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #8a6a3a; }
+  .lc-cfg__calc b { font-family: var(--lc-serif, serif); font-weight: 400; font-size: 24px; color: #111; }
+  .lc-cfg__slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .lc-cfg__slot { position: relative; display: flex; gap: 12px; align-items: center; padding: 10px 30px 10px 12px; border: 1px dashed #c9bfae; background: #f7f4ef; cursor: pointer; min-height: 76px; }
+  .lc-cfg__slot.is-active { border: 2px solid #111; }
+  .lc-cfg__slot.is-filled { border-style: solid; background: #fff; }
+  .lc-cfg__slot img { width: 56px; height: 56px; object-fit: cover; flex: none; }
+  .lc-cfg__slot > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .lc-cfg__slot em { font-style: normal; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; }
+  .lc-cfg__slot strong { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lc-cfg__slot select { padding: 6px 8px; font-size: 13px; }
+  .lc-cfg__slot-empty { color: #6f675c; font-size: 13px; }
+  .lc-cfg__x { position: absolute; top: 4px; right: 6px; background: none; border: 0; font-size: 18px; color: #6f675c; cursor: pointer; }
+  .lc-cfg__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .lc-cfg__chips button { border: 1px solid #d8cfc0; background: #fff; padding: 7px 12px; font-size: 13px; cursor: pointer; color: #1c1b19; font-family: inherit; }
+  .lc-cfg__chips button.is-active { background: #111; color: #fff; border-color: #111; }
+  .lc-cfg__grid-products { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; max-height: 620px; overflow-y: auto; padding: 2px 4px 4px 2px; }
+  .lc-cfg__prod { display: flex; flex-direction: column; gap: 3px; text-align: left; background: #fff; border: 1px solid #e4dccf; padding: 0 0 10px; cursor: pointer; font-family: inherit; color: #1c1b19; transition: border-color .15s, box-shadow .15s; }
+  .lc-cfg__prod:hover { border-color: #b8955a; }
+  .lc-cfg__prod.is-selected { border: 2px solid #111; box-shadow: 0 0 0 3px rgba(184,149,90,.35); }
+  .lc-cfg__prod-img { display: block; aspect-ratio: 1; background: #f7f4ef; overflow: hidden; margin-bottom: 6px; }
+  .lc-cfg__prod-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lc-cfg__prod-v, .lc-cfg__prod-t, .lc-cfg__prod-p, .lc-cfg__prod select, .lc-cfg__qty { margin: 0 10px; }
+  .lc-cfg__prod-v { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; }
+  .lc-cfg__prod-t { font-size: 13.5px; line-height: 1.3; }
+  .lc-cfg__prod-p { font-weight: 600; font-size: 14px; margin-top: auto; padding-top: 4px; }
+  .lc-cfg__prod--san { cursor: default; }
+  .lc-cfg__prod select { width: auto; max-width: calc(100% - 20px); padding: 5px 6px; font-size: 12px; margin-top: 4px; }
+  .lc-cfg__qty { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .lc-cfg__qty button { border: 1px solid #111; background: #fff; width: 30px; height: 30px; cursor: pointer; font-size: 16px; }
+  .lc-cfg__qty .lc-cfg__add { width: 100%; height: 34px; background: #111; color: #fff; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+  .lc-cfg__qty .lc-cfg__add:hover { background: #b8955a; color: #111; border-color: #b8955a; }
+  .lc-cfg__skip { display: flex; gap: 8px; align-items: center; margin-top: 14px; font-size: 14px; color: #6f675c; }
+  .lc-cfg__bathnote { display: flex; flex-direction: column; gap: 4px; background: #111; color: #e9e1d6; padding: 16px 18px; margin-bottom: 16px; border-left: 3px solid #b8955a; }
+  .lc-cfg__bathnote strong { color: #d4b47a; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+  .lc-cfg__bathnote b { color: #fff; font-size: 18px; }
+  .lc-cfg__facts { margin: 0 0 14px; display: grid; border: 1px solid #e4dccf; }
+  .lc-cfg__facts div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 9px 14px; border-bottom: 1px solid #e4dccf; font-size: 14.5px; }
+  .lc-cfg__facts div:last-child { border-bottom: 0; }
+  .lc-cfg__facts dt { color: #8a6a3a; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; padding-top: 2px; }
+  .lc-cfg__facts dd { margin: 0; }
+  .lc-cfg__table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 10px; }
+  .lc-cfg__table th { text-align: left; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; padding: 8px; border-bottom: 1px solid #e4dccf; }
+  .lc-cfg__table td { padding: 10px 8px; border-bottom: 1px solid #efe9df; vertical-align: top; }
+  .lc-cfg__table td small { display: block; color: #8a6a3a; font-size: 11px; }
+  .lc-cfg__table td:last-child, .lc-cfg__table th:last-child { text-align: right; white-space: nowrap; }
+  .lc-cfg__table tfoot td { font-weight: 700; font-size: 16px; border-bottom: 0; border-top: 2px solid #111; }
+  .lc-cfg__note { font-size: 13px; color: #6f675c; margin: 0 0 16px; }
+  .lc-cfg__photos { background: #f7f4ef; border: 1px solid #e4dccf; padding: 16px 18px; margin: 18px 0; }
+  .lc-cfg__photos p { margin: 6px 0 12px; font-size: 14px; color: #6f675c; }
+  .lc-cfg__wa { background: #1f7a4d !important; border-color: #1f7a4d !important; color: #fff !important; }
+  .lc-cfg__wa:hover { background: #17603c !important; border-color: #17603c !important; }
+  .lc-cfg__form { border-top: 1px solid #e4dccf; padding-top: 4px; }
+  .lc-cfg__consent { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 0; font-size: 13px; color: #6f675c; line-height: 1.5; }
+  .lc-cfg__consent input { margin-top: 3px; accent-color: #111; }
+  .lc-cfg__consent a { color: #8a6a3a; }
+  .lc-cfg__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .lc-cfg__cartbtn { border-color: #111 !important; }
+  .lc-cfg__ok { background: #edf7ee; border-left: 3px solid #2e7d32; padding: 12px 14px; color: #1b5e20; }
+  .lc-cfg__err { background: #fdecea; border-left: 3px solid #b3261e; padding: 12px 14px; color: #8c1d18; }
+  .lc-cfg__nav { position: sticky; bottom: 0; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 22px calc(-1 * clamp(14px, 3.5vw, 40px)) -22px; padding: 12px clamp(14px, 3.5vw, 40px); background: rgba(255,255,255,.97); border-top: 1px solid #e4dccf; box-shadow: 0 -6px 16px rgba(0,0,0,.05); }
+  .lc-cfg__back { background: #fff; border: 2px solid #111; color: #111; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; padding: 10px 16px; font-family: inherit; }
+  .lc-cfg__back:hover { background: #111; color: #fff; }
+  .lc-cfg__live { font-weight: 600; font-size: 15px; color: #111; margin-left: auto; }
+  .lc-cfg__next:disabled { opacity: .35; cursor: not-allowed; }
+  .lc-cfg__ogroup { border: 0; padding: 0; margin: 0 0 18px; }
+  .lc-cfg__ogroup legend { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; margin-bottom: 8px; padding: 0; }
+  .lc-cfg__ogroup legend i { font-style: normal; text-transform: none; letter-spacing: 0; color: #9a9184; font-weight: 400; }
+  .lc-cfg__oitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .lc-cfg__oitem { position: relative; cursor: pointer; }
+  .lc-cfg__oitem input { position: absolute; opacity: 0; pointer-events: none; }
+  .lc-cfg__oitem span { display: flex; flex-direction: column; gap: 3px; height: 100%; padding: 11px 12px; border: 1px solid #d8cfc0; background: #f7f4ef; transition: all .15s ease; }
+  .lc-cfg__oitem b { font-weight: 600; font-size: 14px; color: #1c1b19; line-height: 1.3; }
+  .lc-cfg__oitem small { font-size: 12px; color: #8a6a3a; }
+  .lc-cfg__oitem:hover span { border-color: #b8955a; }
+  .lc-cfg__oitem input:checked + span { background: #111; border-color: #111; }
+  .lc-cfg__oitem input:checked + span b { color: #fff; }
+  .lc-cfg__oitem input:checked + span small { color: #d4b47a; }
+  .lc-cfg__oitem input:focus-visible + span { outline: 2px solid #b8955a; outline-offset: 2px; }
+  .lc-cfg__oitem--none span { background: #fff; }
+  .lc-cfg__estimate { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; margin-bottom: 16px; background: #f7f4ef; border: 1px solid #e4dccf; border-left: 3px solid #b8955a; }
+  .lc-cfg__estimate span { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; }
+  .lc-cfg__estimate b { font-family: var(--lc-serif, serif); font-weight: 400; font-size: clamp(26px, 3.4vw, 36px); color: #111; }
+  .lc-cfg__estimate small { color: #6f675c; font-size: 13px; }
+  .lc-cfg__live small { font-weight: 400; color: #8a6a3a; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; margin-right: 4px; }
+  .lc-cfg__table--sv td:last-child { white-space: nowrap; }
+  @media (max-width: 600px) {
+    .lc-cfg__progress li { font-size: 9px; letter-spacing: .04em; }
+    .lc-cfg__facts div { grid-template-columns: 1fr; gap: 2px; }
+    .lc-cfg__grid-products { grid-template-columns: 1fr 1fr; max-height: 540px; }
+    .lc-cfg__table th:nth-child(3), .lc-cfg__table td:nth-child(3) { display: none; }
+    .lc-cfg__project > span { min-height: 170px; }
+    .lc-cfg__oitems { grid-template-columns: 1fr 1fr; }
+    .lc-cfg__back { padding: 10px 12px; }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "LC Projekt-Konfigurator",
+  "settings": [
+    { "type": "text", "id": "title", "label": "Überschrift", "default": "Projekt-Konfigurator" },
+    { "type": "textarea", "id": "intro", "label": "Einleitung" },
+    { "type": "text", "id": "whatsapp", "label": "WhatsApp-Nummer (international, z. B. 4917662596394)" },
+    { "type": "url", "id": "privacy_url", "label": "Link Datenschutzerklärung" },
+    { "type": "number", "id": "bath_from", "label": "Komplettbad ab (€) – derzeit nicht verwendet", "default": 20000 },
+    { "type": "number", "id": "spread", "label": "Spielraum der Gesamtschätzung (%)", "default": 15 },
+    { "type": "header", "content": "Verlegepreise (Schätzung)" },
+    { "type": "number", "id": "lay_min", "label": "Verlegung €/m² von (nur Info)", "default": 40 },
+    { "type": "number", "id": "lay_max", "label": "Verlegung Wohnen/Terrasse €/m² (wird gerechnet)", "default": 70 },
+    { "type": "number", "id": "lay_bath", "label": "Verlegung Bad €/m² (wird gerechnet)", "default": 200 },
+    { "type": "number", "id": "xxl_min", "label": "Zuschlag Großformat €/m² von (nur Info)", "default": 25 },
+    { "type": "number", "id": "xxl_max", "label": "Zuschlag Großformat €/m² (wird gerechnet)", "default": 45 },
+    {
+      "type": "textarea",
+      "id": "options",
+      "label": "Ausstattung & Leistungen mit Preisen",
+      "info": "Eine Zeile pro Option: Schritt (A = Ausstattung, L = Leistung) | Projekte (bad, innen, alle) | Gruppe | single oder multi | Bezeichnung | Preis von (wird gerechnet) | Preis bis (nur Info) | Einheit (pauschal, m2_boden, m2_wand, m2_fliesen)",
+      "default": "A|bad|WC|single|Stand-WC mit Aufputz-Spülkasten|400|900|pauschal\nA|bad|WC|single|Wand-WC mit Vorwandelement & Unterputz-Spülkasten|900|2000|pauschal\nA|bad|WC|single|Dusch-WC (WC mit Bidet-Funktion)|2000|4500|pauschal"
+    },
+    { "type": "header", "content": "Bilder der Projektarten" },
+    { "type": "image_picker", "id": "img_komplett", "label": "Komplettbadsanierung" },
+    { "type": "image_picker", "id": "img_bad", "label": "Bad" },
+    { "type": "image_picker", "id": "img_wohnen", "label": "Küche & Wohnen" },
+    { "type": "image_picker", "id": "img_terrasse", "label": "Terrasse" },
+    { "type": "header", "content": "Fliesen zur Auswahl" },
+    { "type": "collection", "id": "col_tiles_1", "label": "Kollektion 1" },
+    { "type": "collection", "id": "col_tiles_2", "label": "Kollektion 2" },
+    { "type": "collection", "id": "col_tiles_3", "label": "Kollektion 3" },
+    { "type": "collection", "id": "col_tiles_4", "label": "Kollektion 4" },
+    { "type": "collection", "id": "col_tiles_5", "label": "Kollektion 5" },
+    { "type": "collection", "id": "col_outdoor", "label": "Terrassenplatten" },
+    { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 4, "max": 40, "step": 1, "default": 24 },
+    { "type": "header", "content": "Sanitär" },
+    { "type": "collection", "id": "col_sanitary", "label": "Sanitär-Kollektion" },
+    { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 32 },
+    { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 32 }
+  ],
+  "presets": [{ "name": "LC Projekt-Konfigurator" }]
+}
+{% endschema %}
