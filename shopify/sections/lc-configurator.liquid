@@ -452,19 +452,27 @@
         this.state = state;
         this.init().then(() => { this.build(state); this.render(); }, () => {});
       }
+      // Fliesentextur: Block aus 4 × 4 (schmale Formate 4 × 8) Platten, jede ein anderer Ausschnitt des Fliesenbilds,
+      // zufällig gespiegelt und leicht in der Helligkeit variiert – wie Platten aus einer Lieferung.
+      // Raster = Fliese + 2-mm-Fuge, daher stimmen Fugenbild, Maße und Pläne weiterhin exakt.
       texture(t) {
         const id = t ? t.url + '|' + t.w + '|' + t.h : 'none';
         if (this.tex[id]) return this.tex[id];
         const T = this.T;
         const tw = t ? Math.max(t.w, t.h) : 60, th = t ? Math.min(t.w, t.h) : 60;
         const pw = tw + GROUT, ph = th + GROUT;
-        const px = 512 / pw;
+        const cols = 4, rows = tw / th >= 3 ? 8 : 4;
+        const px = 384 / pw;
         const W = Math.round(pw * px), H = Math.round(ph * px);
         const cv = document.createElement('canvas');
-        cv.width = W * 2; cv.height = H * 2;
+        cv.width = W * cols; cv.height = H * rows;
         const ctx = cv.getContext('2d');
         const grout = Math.max(1.5, GROUT * px);
         const draw = (img) => {
+          // fester Zufall je Fliese, damit die Wand bei jedem Neuaufbau gleich aussieht
+          let seed = 7;
+          for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
+          const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
           let lum = 0.85;
           ctx.fillStyle = '#ddd8d0';
           ctx.fillRect(0, 0, cv.width, cv.height);
@@ -474,26 +482,31 @@
             const px1 = ctx.getImageData(0, 0, 1, 1).data;
             lum = (0.3 * px1[0] + 0.59 * px1[1] + 0.11 * px1[2]) / 255;
             const ia = img.width / img.height, ta = W / H;
-            const sw = ia > ta ? img.height * ta : img.width, sh = ia > ta ? img.height : img.width / ta;
-            const sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
-            for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+            const cw = ia > ta ? img.height * ta : img.width, ch = ia > ta ? img.height : img.width / ta;
+            for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+              const k = 0.55 + rnd() * 0.3, sw = cw * k, sh = ch * k;
+              const sx = rnd() * (img.width - sw), sy = rnd() * (img.height - sh);
+              const fx = rnd() < 0.5, fy = rnd() < 0.5;
               ctx.save();
-              ctx.translate(i * W + (i ? W : 0), j * H + (j ? H : 0));
-              ctx.scale(i ? -1 : 1, j ? -1 : 1);
+              ctx.translate(i * W + (fx ? W : 0), j * H + (fy ? H : 0));
+              ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
               ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
               ctx.restore();
+              const v = (rnd() - 0.5) * 0.08;
+              ctx.fillStyle = v > 0 ? 'rgba(255,255,255,' + v + ')' : 'rgba(0,0,0,' + -v + ')';
+              ctx.fillRect(i * W, j * H, W, H);
             }
           }
           ctx.fillStyle = lum > 0.62 ? 'rgba(150,143,133,.85)' : lum > 0.35 ? 'rgba(222,218,210,.9)' : 'rgba(120,116,110,.9)';
-          [0, W].forEach((x) => ctx.fillRect(x, 0, grout, cv.height));
-          [0, H].forEach((y) => ctx.fillRect(0, y, cv.width, grout));
+          for (let i = 0; i < cols; i++) ctx.fillRect(i * W, 0, grout, cv.height);
+          for (let j = 0; j < rows; j++) ctx.fillRect(0, j * H, cv.width, grout);
         };
         draw(null);
         const tex = new T.CanvasTexture(cv);
         tex.wrapS = tex.wrapT = T.RepeatWrapping;
         tex.colorSpace = T.SRGBColorSpace;
         tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-        const out = this.tex[id] = { tex, bw: (pw * 2) / 100, bh: (ph * 2) / 100, tw: tw / 100, th: th / 100, gloss: !!(t && t.gloss) };
+        const out = this.tex[id] = { tex, bw: (pw * cols) / 100, bh: (ph * rows) / 100, pw: pw / 100, ph: ph / 100, tw: tw / 100, th: th / 100, gloss: !!(t && t.gloss) };
         if (t && t.url) {
           const img = new Image();
           img.crossOrigin = 'anonymous';
@@ -502,7 +515,7 @@
         }
         return out;
       }
-      // Fläche bzw. Quader mit Fliesen im echten Maßstab (UVs in Metern / Größe des 2×2-Blocks)
+      // Fläche bzw. Quader mit Fliesen im echten Maßstab (UVs in Metern / Größe des Plattenblocks)
       tiledMat(tex) { return new this.T.MeshStandardMaterial({ map: tex.tex, roughness: tex.gloss ? 0.18 : 0.55 }); }
       tiledPlane(w, h, tex, ox, oy) {
         const geo = new this.T.PlaneGeometry(w, h);
@@ -550,7 +563,7 @@
         if (s.h) g.add(this.walls2d);
         const paint = new T.MeshStandardMaterial({ color: 0xf2efea, roughness: 0.95 });
         const ft = this.texture(s.floor);
-        const floor = this.tiledPlane(s.l, s.b, ft, tileStart(s.l, ft.bw / 2), tileStart(s.b, ft.bh / 2));
+        const floor = this.tiledPlane(s.l, s.b, ft, tileStart(s.l, ft.pw), tileStart(s.b, ft.ph));
         floor.rotation.x = -Math.PI / 2;
         floor.position.set(s.l / 2, 0, s.b / 2);
         g.add(floor);
@@ -905,7 +918,7 @@
       // (Abweichung > 5 mm: Wand symmetrisch). Danach richtet sich jede Wand nach ihrer wichtigsten Armatur
       // (Dusche > Wanne > Waschtisch > WC …): liegt sie nicht auf Fuge/Fliesenmitte, wird das Wandraster verschoben.
       computeJoints() {
-        const s = this.size, ft = this.texture(s.floor), pw = this.wallTex.bw / 2, g = GROUT / 100;
+        const s = this.size, ft = this.texture(s.floor), pw = this.wallTex.pw, g = GROUT / 100;
         const mod = (v, p) => ((v % p) + p) % p, near = (v, p) => { const r = mod(v, p); return Math.min(r, p - r); };
         const lenOf = (w) => (w === 'back' || w === 'front' ? s.l : s.b);
         const finish = (j, wall) => {
@@ -916,7 +929,7 @@
           j.edgeR = (mod(len - j.eu, pw) || pw) - g;
           return j;
         };
-        this.floorJ = { px: ft.bw / 2, pz: ft.bh / 2, ex: tileStart(s.l, ft.bw / 2), ez: tileStart(s.b, ft.bh / 2) };
+        this.floorJ = { px: ft.pw, pz: ft.ph, ex: tileStart(s.l, ft.pw), ez: tileStart(s.b, ft.ph) };
         this.jointsBase = {};
         this.joints = {};
         const lead = ['shower', 'tub', 'vanity', 'wc', 'bidet', 'urinal'];
@@ -949,7 +962,7 @@
       }
       // Armaturhöhe auf die nächste Fuge bzw. Fliesenmitte legen (höchstens 10 cm verschieben)
       armHeight(y) {
-        const ph = this.wallTex.bh / 2, h = ph / 2, c = Math.round(y / h) * h;
+        const ph = this.wallTex.ph, h = ph / 2, c = Math.round(y / h) * h;
         return Math.abs(c - y) <= 0.1 && (!this.size.wallH || c < this.size.wallH) ? c : y;
       }
       connY(k) { return k.arm ? this.armHeight(k.y) : k.y; }
@@ -1193,7 +1206,7 @@
         const tiles = kind === 'tiles';
         let o = this.svgOpen(-pad, -pad, cm(len) + 2 * pad, cm(H) + 2 * pad);
         o += '<polygon points="' + poly((y) => y) + '" fill="#fff" stroke="#222" stroke-width="2"/>';
-        const tw = this.wallTex.bw / 2, th = this.wallTex.bh / 2, e = this.joints[wall].eu;
+        const tw = this.wallTex.pw, th = this.wallTex.ph, e = this.joints[wall].eu;
         if (s.wallH) {
           o += '<clipPath id="' + id + '"><polygon points="' + poly((y) => Math.min(y, s.wallH)) + '"/></clipPath>';
           o += '<g clip-path="url(#' + id + ')" stroke="' + (tiles ? '#b8955a' : '#e4dccf') + '" stroke-width="' + (tiles ? 0.8 : 0.5) + '">';
@@ -1222,7 +1235,7 @@
         let o = this.svgOpen(-pad, -pad, cm(s.l) + 2 * pad, cm(s.b) + 2 * pad);
         if (s.h) o += '<rect x="-10" y="-10" width="' + (cm(s.l) + 20) + '" height="' + (cm(s.b) + 20) + '" fill="#2b2926"/>';
         o += '<rect x="0" y="0" width="' + cm(s.l) + '" height="' + cm(s.b) + '" fill="' + (tiles ? '#f7f4ef' : '#fff') + '"/>';
-        const ft = this.texture(s.floor), tw = ft.bw / 2, th = ft.bh / 2, ex = tileStart(s.l, tw), ez = tileStart(s.b, th);
+        const ft = this.texture(s.floor), tw = ft.pw, th = ft.ph, ex = tileStart(s.l, tw), ez = tileStart(s.b, th);
         o += '<g stroke="' + (tiles ? '#b8955a' : '#e4dccf') + '" stroke-width="' + (tiles ? 0.8 : 0.5) + '">';
         for (let x = ex; x < s.l - 0.001; x += tw) if (x > 0.001) o += '<line x1="' + cm(x) + '" y1="0" x2="' + cm(x) + '" y2="' + cm(s.b) + '"/>';
         for (let z = ez; z < s.b - 0.001; z += th) if (z > 0.001) o += '<line x1="0" y1="' + cm(z) + '" x2="' + cm(s.l) + '" y2="' + cm(z) + '"/>';
