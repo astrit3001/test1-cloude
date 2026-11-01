@@ -55,6 +55,7 @@
             <span class="lc-cfg__3d-title">3D-Vorschau Ihres Raums</span>
             <button type="button" data-3d-zoom="1" aria-label="Näher heran">+</button>
             <button type="button" data-3d-zoom="-1" aria-label="Weiter weg">−</button>
+            <button type="button" class="lc-cfg__3d-mode" data-3d-mode>2D-Grundriss</button>
             <button type="button" data-3d-dims aria-pressed="true">Maße</button>
             <button type="button" data-3d-move aria-pressed="false">Objekte verschieben</button>
             <button type="button" data-3d-reset>Zurücksetzen</button>
@@ -233,6 +234,17 @@
         this.showDims = true;
         this.active = null;
         this.view = { theta: -0.65, phi: 1.0, zoom: 1 };
+        this.mode = '3d';
+        const modeBtn = box.querySelector('[data-3d-mode]');
+        modeBtn.addEventListener('click', () => {
+          this.mode = this.mode === '3d' ? '2d' : '3d';
+          modeBtn.textContent = this.mode === '3d' ? '2D-Grundriss' : '3D-Ansicht';
+          this.box.classList.toggle('is-2d', this.mode === '2d');
+          if (this.persp) this.camera = this.mode === '2d' ? this.ortho : this.persp;
+          this.hint.hidden = false;
+          this.hint.textContent = this.mode === '2d' ? 'Grundriss von oben · Objekte ziehen zum Verschieben' : 'Ziehen zum Drehen';
+          this.render();
+        });
         const dimsBtn = box.querySelector('[data-3d-dims]');
         dimsBtn.addEventListener('click', () => {
           this.showDims = !this.showDims;
@@ -274,8 +286,10 @@
           const sun = new T.DirectionalLight(0xffffff, 1.6);
           sun.position.set(-3, 6, 5);
           this.scene.add(sun);
-          this.camera = new T.PerspectiveCamera(42, 1, 0.05, 100);
+          this.persp = this.camera = new T.PerspectiveCamera(42, 1, 0.05, 100);
+          this.ortho = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
           this.ray = new T.Raycaster();
+          this.ray.params.Line.threshold = 0.02;
           this.bindPointer(r.domElement);
           new ResizeObserver(() => this.render()).observe(this.stage);
           this.hint.textContent = 'Ziehen zum Drehen · Objekte mit der Maus verschieben';
@@ -293,7 +307,8 @@
         if (!this.items.length) return null;
         this.ray.setFromCamera(this.ndc(e), this.camera);
         // Glas nur greifen, wenn dahinter nichts Festes liegt (sonst wäre das WC hinter der Duschwand nicht greifbar)
-        const hits = this.ray.intersectObjects(this.items, true);
+        const shown = (x) => { for (; x; x = x.parent) if (!x.visible) return false; return true; };
+        const hits = this.ray.intersectObjects(this.items, true).filter((h) => shown(h.object));
         const hit = hits.find((h) => !h.object.material.transparent) || hits[0];
         let o = hit && hit.object;
         while (o && !o.userData.key) o = o.parent;
@@ -332,6 +347,7 @@
             if (e.pointerType === 'mouse') el.style.cursor = this.pick(e) ? 'move' : '';
             return;
           }
+          if (this.mode === '2d') return;
           this.view.theta -= (e.clientX - last.clientX) * 0.008;
           // Am Handy nur seitlich drehen, damit die Seite weiter scrollbar bleibt
           if (e.pointerType === 'mouse' || this.moveMode) this.view.phi = Math.min(1.45, Math.max(0.25, this.view.phi - (e.clientY - last.clientY) * 0.006));
@@ -445,6 +461,16 @@
         };
         Object.values(this.rd).forEach((d) => d && this.dimsG.add(d));
         g.add(this.dimsG);
+        // Wandstärke als dunkle Kontur, nur im 2D-Grundriss sichtbar
+        this.walls2d = new T.Group();
+        const wm = new T.MeshBasicMaterial({ color: 0x2b2926 });
+        const t2 = 0.1;
+        [[s.l + 2 * t2, s.l / 2, -t2 / 2, t2], [s.l + 2 * t2, s.l / 2, s.b + t2 / 2, t2], [t2, -t2 / 2, s.b / 2, s.b], [t2, s.l + t2 / 2, s.b / 2, s.b]].forEach(([w, x, z, d]) => {
+          const m = new T.Mesh(new T.BoxGeometry(w, 0.02, d), wm);
+          m.position.set(x, 0.01, z);
+          this.walls2d.add(m);
+        });
+        if (s.h) g.add(this.walls2d);
         const paint = new T.MeshStandardMaterial({ color: 0xf2efea, roughness: 0.95 });
         const floor = this.tiledPlane(s.l, s.b, this.texture(s.floor));
         floor.rotation.x = -Math.PI / 2;
@@ -474,6 +500,17 @@
           o.userData.place = Object.assign({}, this.place[it.key] || this.defaultPlace(it.key, o.userData.w, s, backUsed));
           if (!this.place[it.key] && it.type === 'free') o.userData.place.dist = 0.15;
           if (o.userData.place.wall === 'back' && !this.place[it.key]) backUsed += o.userData.w + 0.25;
+          // Umriss mit Namen für den 2D-Grundriss
+          const V = T.Vector3, w = o.userData.w, d = o.userData.d, fp = new T.Group();
+          const ln = new T.LineLoop(new T.BufferGeometry().setFromPoints([new V(-w / 2, 0.03, 0), new V(w / 2, 0.03, 0), new V(w / 2, 0.03, d), new V(-w / 2, 0.03, d)]), new T.LineBasicMaterial({ color: 0x8a6a3a, depthTest: false }));
+          ln.renderOrder = 9;
+          fp.add(ln);
+          const lb = this.label(ITEM_NAMES[it.key]);
+          lb.scale.multiplyScalar(0.8);
+          lb.position.set(0, 0.05, d / 2);
+          fp.add(lb);
+          o.add(fp);
+          o.userData.fp = fp;
           this.put(o);
           g.add(o);
           this.items.push(o);
@@ -490,6 +527,13 @@
         const line = new T.LineSegments(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({ color: 0x8a6a3a, depthTest: false, transparent: true }));
         line.renderOrder = 10;
         g.add(line);
+        const sp = this.label(text);
+        sp.position.copy(a).add(b).multiplyScalar(0.5);
+        g.add(sp);
+        return g;
+      }
+      label(text) {
+        const T = this.T;
         const cv = document.createElement('canvas');
         const ctx = cv.getContext('2d');
         const font = '600 44px sans-serif';
@@ -509,9 +553,7 @@
         const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, depthTest: false }));
         sp.renderOrder = 11;
         sp.scale.set((this.dimK * w) / 64, this.dimK, 1);
-        sp.position.copy(a).add(b).multiplyScalar(0.5);
-        g.add(sp);
-        return g;
+        return sp;
       }
       // Abstände des zuletzt verschobenen Objekts entlang seiner Wand: Wand – Objekt – Wand
       itemDims() {
@@ -666,17 +708,32 @@
         const r = this.renderer;
         if (r.domElement.width !== Math.round(w * r.getPixelRatio()) || r.domElement.height !== Math.round(h * r.getPixelRatio())) r.setSize(w, h, false);
         const s = this.size, v = this.view;
-        const d = Math.hypot(s.l, s.b, s.h || 1) * 1.2 / v.zoom;
-        const tx = s.l / 2, ty = (s.h || 0.5) * 0.42, tz = s.b / 2;
-        this.camera.aspect = w / h;
-        this.camera.position.set(tx + d * Math.sin(v.phi) * Math.sin(v.theta), ty + d * Math.cos(v.phi), tz + d * Math.sin(v.phi) * Math.cos(v.theta));
-        this.camera.lookAt(tx, ty, tz);
-        this.camera.updateProjectionMatrix();
+        const flat = this.mode === '2d';
+        if (flat) {
+          // Grundriss: Draufsicht, Rückwand oben, Raum mit Rand für die Maßketten eingepasst
+          const c = this.ortho, m = 0.75, a = w / h;
+          const hh = Math.max(s.b / 2 + m, (s.l / 2 + m) / a);
+          c.left = -hh * a; c.right = hh * a; c.top = hh; c.bottom = -hh;
+          c.zoom = v.zoom;
+          c.position.set(s.l / 2, 30, s.b / 2);
+          c.up.set(0, 0, -1);
+          c.lookAt(s.l / 2, 0, s.b / 2);
+          c.updateProjectionMatrix();
+        } else {
+          const d = Math.hypot(s.l, s.b, s.h || 1) * 1.2 / v.zoom;
+          const tx = s.l / 2, ty = (s.h || 0.5) * 0.42, tz = s.b / 2;
+          this.persp.aspect = w / h;
+          this.persp.position.set(tx + d * Math.sin(v.phi) * Math.sin(v.theta), ty + d * Math.cos(v.phi), tz + d * Math.sin(v.phi) * Math.cos(v.theta));
+          this.persp.lookAt(tx, ty, tz);
+          this.persp.updateProjectionMatrix();
+        }
+        if (this.walls2d) this.walls2d.visible = flat;
+        this.items.forEach((o) => { o.userData.fp.visible = flat; });
         if (this.rd) {
-          const c = this.camera.position, fz = c.z > s.b / 2, fx = c.x > s.l / 2, o = 0.3;
+          const c = this.camera.position, fz = flat || c.z > s.b / 2, fx = !flat && c.x > s.l / 2, o = flat ? 0.4 : 0.3;
           this.rd.len.position.set(0, 0.01, fz ? s.b + o : -o);
           this.rd.wid.position.set(fx ? s.l + o : -o, 0.01, 0);
-          if (this.rd.hgt) this.rd.hgt.position.set(fx ? 0 : s.l, 0, fz ? 0 : s.b);
+          if (this.rd.hgt) { this.rd.hgt.visible = !flat; this.rd.hgt.position.set(fx ? 0 : s.l, 0, fz ? 0 : s.b); }
         }
         r.render(this.scene, this.camera);
       }
@@ -1285,6 +1342,9 @@
   .lc-cfg__3d-title { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; font-weight: 600; margin-right: auto; }
   .lc-cfg__3d-bar button { border: 1px solid #d8cfc0; background: #fff; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #1c1b19; font-family: inherit; min-width: 34px; }
   .lc-cfg__3d-bar button:hover { border-color: #111; }
+  .lc-cfg__3d-bar .lc-cfg__3d-mode { background: #111; color: #fff; border-color: #111; font-weight: 600; }
+  .lc-cfg__3d-bar .lc-cfg__3d-mode:hover { background: #b8955a; border-color: #b8955a; color: #111; }
+  .lc-cfg__3d.is-2d .lc-cfg__3d-stage { cursor: default; }
   .lc-cfg__3d-note { margin: 0; padding: 0 10px 10px; background: #fff; font-size: 12px; color: #6f675c; }
   @media (max-width: 600px) {
     .lc-cfg__progress li { font-size: 9px; letter-spacing: .04em; }
