@@ -221,8 +221,8 @@
     const short = (c) => String(c).split(' – ')[0].replace(/^Fliesen in /, '').replace('Beton- & Zementoptik', 'Betonoptik');
     const range = (a, b) => (a === b ? EUR.format(a) : EUR.format(a) + ' – ' + EUR.format(b));
     const r100 = (v) => Math.round(v / 100) * 100;
-    const SAN_CATS = ['Waschtische', 'Badewannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Zubehör'];
-    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör' };
+    const SAN_CATS = ['Waschtische', 'Badewannen', 'Duschwannen', 'WC', 'Badmöbel', 'Armaturen', 'Spiegel', 'Waschtischplatten', 'Heizkörper', 'Zubehör'];
+    const SAN_TYPE = { Waschbecken: 'Waschtische', Aufsatzwaschbecken: 'Waschtische', Standwaschbecken: 'Waschtische', 'Sanitär': 'Waschtische', Badewanne: 'Badewannen', Badewannen: 'Badewannen', 'WC-Komplettset': 'WC', 'Badmöbel': 'Badmöbel', 'Badmöbel-Set': 'Badmöbel', Armaturen: 'Armaturen', Spiegel: 'Spiegel', Waschtischplatten: 'Waschtischplatten', 'Zubehör': 'Zubehör', Waschtische: 'Waschtische', Waschtisch: 'Waschtische', Duschwannen: 'Duschwannen', Duschwanne: 'Duschwannen', Heizpaneele: 'Heizkörper', 'Heizkörper': 'Heizkörper', 'Badzubehör': 'Zubehör' };
     const LABELS = { projekt: 'Projekt', masse: 'Maße', ausstattung: 'Ausstattung', fliesen: 'Fliesen', sanitaer: 'Sanitär', leistung: 'Leistung', anfrage: 'Übersicht' };
     const UNIT = { pauschal: '', m2_boden: '/m² Boden', m2_wand: '/m² Wand', m2_fliesen: '/m² Fliesenfläche', m2_rest: '/m² Wand ohne Fliesen', m2_decke: '/m² Decke' };
     const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
@@ -2132,17 +2132,19 @@
         if (wc || !decided) out.push({ key: 'wc', stand: /Stand/.test(wc), dusch: /Dusch-WC/.test(wc) });
         L('WC-Extras').forEach((t) => { if (/Bidet/.test(t)) out.push({ key: 'bidet' }); if (/Urinal/.test(t)) out.push({ key: 'urinal' }); });
         const dusche = L('Dusche');
-        if (dusche.length || !decided) {
-          const size = (L('Duschgröße')[0] || '').match(/(\d+)\s*×\s*(\d+)/);
+        const trayP = prod(['Duschwannen']);
+        if (dusche.length || trayP || !decided) {
+          const pm = trayP.match(/(\d{2,3})\s*[x×]\s*(\d{2,3})/);
+          const size = pm ? [0, Math.max(+pm[1], +pm[2]), Math.min(+pm[1], +pm[2])] : (L('Duschgröße')[0] || '').match(/(\d+)\s*×\s*(\d+)/);
           out.push({
             key: 'shower', w: size ? +size[1] / 100 : 0.9, d: size ? +size[2] / 100 : 0.9,
-            tray: dusche.some((t) => /Duschwanne/.test(t)) && !dusche.some((t) => /Bodengleich/.test(t)),
+            tray: !!trayP || (dusche.some((t) => /Duschwanne/.test(t)) && !dusche.some((t) => /Bodengleich/.test(t))),
             drain: L('Duschablauf')[0] || '', head: L('Duschbrause')[0] || '', glass: L('Duschabtrennung')[0] || '', extras: L('Dusch-Extras'),
             niches: /Trennmauer/.test(L('Duschabtrennung')[0] || '') ? +(((L('Nischen in der Trennmauer')[0] || '').match(/\d+/) || [0])[0]) : 0,
           });
         }
         const tubP = prod(['Badewannen']);
-        const wanne = tubP ? (/freistehend/i.test(tubP) ? 'Freistehende Badewanne' : /whirl/i.test(tubP) ? 'Whirlpool-Wanne' : 'Einbauwanne') : L('Badewanne')[0] || '';
+        const wanne = tubP ? (/freistehend|freestanding|exent/i.test(tubP) ? 'Freistehende Badewanne' : /whirl/i.test(tubP) ? 'Whirlpool-Wanne' : 'Einbauwanne') : L('Badewanne')[0] || '';
         const tm = tubP.match(/(\d{3})\s*[x×]\s*(\d{2,3})/);
         if (wanne) out.push({ key: 'tub', type: /Freistehend/.test(wanne) ? 'free' : /Whirlpool/.test(wanne) ? 'whirl' : 'built', len: tm ? +tm[1] / 100 : 0, dep: tm ? +tm[2] / 100 : 0 });
         const wp = L('Waschplatz')[0] || '';
@@ -2153,11 +2155,11 @@
         if (wp || vq || !decided) out.push({
           key: 'vanity', w: vw >= 0.4 && vw <= 2.4 ? vw : 0,
           double: vP ? /doppel|2 becken|zwei becken/i.test(vP) || vw >= 1.2 : /Doppel/.test(wp) || sanQ('Waschtische') >= 2,
-          stand: /stehend|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
+          stand: /stehend|standwasch|de pie|freestanding|bodenstehend/i.test(vP) && !/wandh/i.test(vP),
           color: /eiche|holz|nuss|teak|natur/i.test(vP) ? 'wood' : /schwarz|black/i.test(vP) ? 'black' : /grau|anthrazit|grey/i.test(vP) ? 'grey' : /weiß|weiss|white/i.test(vP) ? 'white' : vP ? 'white' : 'wood',
           led: licht.some((t) => /LED/.test(t)),
         });
-        if (licht.some((t) => /Handtuch/.test(t))) out.push({ key: 'radiator' });
+        if (licht.some((t) => /Handtuch/.test(t)) || prod(['Heizkörper'])) out.push({ key: 'radiator' });
         if (licht.some((t) => /Lüfter/.test(t))) out.push({ key: 'fan' });
         return out;
       }
@@ -2260,7 +2262,7 @@
           return '<div class="lc-cfg__prod lc-cfg__prod--san' + (s ? ' is-selected' : '') + '">' +
             '<span class="lc-cfg__prod-img">' + (p.img ? '<img loading="lazy" src="' + p.img + '" alt="">' : '') + '</span>' +
             '<span class="lc-cfg__prod-v">' + esc(this.sanCat(p)) + '</span><span class="lc-cfg__prod-t">' + esc(p.t) + '</span>' +
-            '<span class="lc-cfg__prod-p">' + (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) + '</span>' + (s ? opts : '') +
+            '<span class="lc-cfg__prod-p">' + (min > 0 ? (p.vs.length > 1 ? 'ab ' : '') + EUR2.format(min / 100) : 'Preis auf Anfrage') + '</span>' + (s ? opts : '') +
             '<span class="lc-cfg__qty">' + (s ? '<button type="button" data-q="-1" data-id="' + p.id + '">−</button><b>' + s.q + '</b><button type="button" data-q="1" data-id="' + p.id + '">+</button>' : '<button type="button" class="lc-cfg__add" data-q="1" data-id="' + p.id + '">Hinzufügen</button>') + '</span></div>';
         }).join('');
         grid.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => {
@@ -2275,7 +2277,10 @@
       }
       summary() {
         const a = this.areas();
-        const lines = this.lines();
+        // Produkte ohne Preis (Preis auf Anfrage) sind Eventualpositionen: sichtbar, aber nicht in der Summe
+        const all = this.lines();
+        const evt = all.filter((l) => !l.price && l.qty);
+        const lines = all.filter((l) => evt.indexOf(l) < 0);
         const total = this.total();
         const est = this.estimate();
         const leistung = (this.$('input[name="lc-leistung"]:checked') || {}).value || '';
@@ -2296,6 +2301,11 @@
             est.sv.map((s) => '<tr><td>' + esc(s.label) + '<br><small>' + esc(s.detail) + '</small></td><td>ca. ' + EUR.format(Math.round(s.sum)) + '</td></tr>').join('') +
             '</tbody><tfoot><tr><td>Arbeitsleistungen & Ausstattung</td><td>ca. ' + EUR.format(Math.round(est.svSum)) + '</td></tr></tfoot></table>';
         }
+        if (evt.length) {
+          html += '<h4>Eventualpositionen – Preis folgt im Angebot</h4><table class="lc-cfg__table lc-cfg__table--sv"><tbody>' +
+            evt.map((l) => '<tr><td><small>' + l.label + '</small>' + esc(l.title) + (l.vt ? '<br><small>' + esc(l.vt) + '</small>' : '') + '</td><td>' + l.qty + (l.area ? ' m²' : ' Stk') + ' · Preis auf Anfrage</td></tr>').join('') +
+            '</tbody></table><p class="lc-cfg__sub">Diese Produkte sind in der Schätzung noch nicht enthalten und werden im Angebot ergänzt.</p>';
+        }
         html += '<p class="lc-cfg__note">Die Gesamtschätzung enthält ' + this.cfg.spread + ' % Spielraum. Fliesenmengen inkl. ca. 10 % Verschnitt. XXL-Platten zzgl. Spezialtransport. Ausstattungspreise sind Richtwerte inkl. Montage und Standard-Material.</p>';
         this.$('[data-summary]').innerHTML = html;
         const svText = est.sv.map((s) => '- ' + s.label + ' (' + s.detail + '): ca. ' + EUR.format(Math.round(s.sum))).join('\n');
@@ -2305,6 +2315,7 @@
           (sl ? '\nDachschräge: ' + { back: 'hinten', front: 'vorne', left: 'links', right: 'rechts' }[sl.side] + ', Kniestock ' + fmtM(sl.k) + ', reicht ' + fmtM(sl.d) + ' in den Raum' : '') +
           '\nLeistung: ' + leistung + '\n' +
           (lines.length ? 'Material:\n' + lines.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + (l.area ? ', ' + l.qty + ' m²' : (l.qty ? ', ' + l.qty + ' Stk' : '')) + (l.sum ? ' = ' + EUR2.format(l.sum / 100) : '')).join('\n') + '\n' : '') +
+          (evt.length ? 'Eventualpositionen (Preis folgt im Angebot):\n' + evt.map((l) => '- ' + l.label + ': ' + l.title + (l.vt ? ' (' + l.vt + ')' : '') + ', ' + l.qty + (l.area ? ' m²' : ' Stk')).join('\n') + '\n' : '') +
           (svText ? 'Ausstattung & Leistungen:\n' + svText + '\n' : '') +
           (this.room3d && this.isBath() && this.room3d.wallText() ? 'Wandfliesen: ' + this.room3d.wallText() + '\n' : '') +
           (layout.length ? 'Aufteilung laut 3D-Vorschau:\n' + layout.map((t) => '- ' + t).join('\n') + '\n' : '') +
@@ -2316,7 +2327,7 @@
         this.$('[data-cart]').hidden = !lines.some((l) => l.qty > 0);
       }
       async addToCart() {
-        const items = this.lines().filter((l) => l.qty > 0).map((l) => ({ id: l.vid, quantity: l.qty }));
+        const items = this.lines().filter((l) => l.qty > 0 && l.price > 0).map((l) => ({ id: l.vid, quantity: l.qty }));
         if (!items.length) return;
         const btn = this.$('[data-cart]');
         btn.disabled = true; btn.textContent = 'Wird hinzugefügt …';
