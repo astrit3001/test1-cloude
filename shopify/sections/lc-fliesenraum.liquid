@@ -15,7 +15,7 @@
   assign seen = ','
 -%}
 <section class="lc-fr" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
-  <lc-fliesenraum class="lc-fr__app" data-min="{{ s.min_size | default: 120 }}">
+  <lc-fliesenraum class="lc-fr__app" data-min-short="{{ s.min_short | default: 60 }}" data-min-long="{{ s.min_long | default: 120 }}">
     <div class="lc-fr__head">
       <div>
         {%- if s.title != blank -%}<h2>{{ s.title }}</h2>{%- endif -%}
@@ -142,6 +142,39 @@
       return c;
     };
 
+    const size = (t) => { const m = String(t).match(/(\d+(?:[.,]\d+)?)\s*[×xX]\s*(\d+(?:[.,]\d+)?)/); return m ? [parseFloat(m[1].replace(',', '.')), parseFloat(m[2].replace(',', '.'))] : null; };
+    const CACHE = 'lc-fr-bildpruefung-1';
+    const thumb = (u) => u.replace(/([?&])width=\d+/, '$1width=240');
+    // Ist das Bild eine reine Fliesenoberfläche? Raumfotos, Titelseiten und Katalogblätter fallen durch:
+    // Seitenverhältnis passt zum Format (oder quadratischer Ausschnitt), wenig harte Kanten, keine weiße Katalogfläche mit Schrift.
+    // Bilder liegen auf der Shop-Domain, daher sind die Pixel lesbar.
+    const tileCheck = (url, z) => new Promise((res) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const N = 48, cv = document.createElement('canvas'); cv.width = N; cv.height = N;
+          const ctx = cv.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0, N, N);
+          const d = ctx.getImageData(0, 0, N, N).data, L = new Float32Array(N * N);
+          let white = 0, edge = 0;
+          for (let i = 0; i < N * N; i++) {
+            const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+            L[i] = 0.3 * r + 0.59 * g + 0.11 * b;
+            if (r > 250 && g > 250 && b > 250) white++;
+          }
+          for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
+            if (Math.abs(L[y * N + x + 1] - L[y * N + x - 1]) + Math.abs(L[(y + 1) * N + x] - L[(y - 1) * N + x]) > 90) edge++;
+          }
+          const r = img.naturalWidth / img.naturalHeight, t = z[0] / z[1];
+          const fit = Math.min(Math.abs(Math.log(r / t)), Math.abs(Math.log(r * t))) < 0.2 || Math.abs(Math.log(r)) < 0.12;
+          const w = white / (N * N), e = edge / ((N - 2) * (N - 2));
+          res(fit && e < 0.09 && !(w > 0.25 && e > 0.012));
+        } catch (err) { res(false); }
+      };
+      img.onerror = () => res(false);
+      img.src = thumb(url);
+    });
+
     customElements.define('lc-fliesenraum', class extends HTMLElement {
       $(q) { return this.querySelector(q); }
       connectedCallback() {
@@ -149,14 +182,15 @@
         this.started = true;
         this.tiles = [];
         this.querySelectorAll('[data-tile-json]').forEach((el) => { try { this.tiles.push(JSON.parse(el.textContent)); } catch (e) {} });
-        // Nur Großformate (beide Seiten mindestens data-min cm) mit eigenem Fliesenbild der Variante
-        const min = +this.dataset.min || 120;
-        const size = (t) => { const m = String(t).match(/(\d+(?:[.,]\d+)?)\s*[×xX]\s*(\d+(?:[.,]\d+)?)/); return m ? [parseFloat(m[1].replace(',', '.')), parseFloat(m[2].replace(',', '.'))] : null; };
+        // Nur Formate ab z. B. 60 × 120 cm (kurze / lange Seite) mit eigenem Fliesenbild der Variante
+        const minS = +this.dataset.minShort || 60, minL = +this.dataset.minLong || 120;
         const real = (x) => typeof x === 'string' && x;
         this.tiles = this.tiles.map((p) => {
-          p.vs = p.vs.filter((v) => { const z = size(v.t); return z && Math.min(z[0], z[1]) >= min && (real(v.tx) || (v.mt || []).some(real)); });
+          p.vs = p.vs.filter((v) => { const z = size(v.t); v.img = real(v.tx) || (v.mt || []).find(real); v.z = z; return z && Math.min(...z) >= minS && Math.max(...z) >= minL && v.img; });
           return p;
         }).filter((p) => p.vs.length);
+        try { this.cache = JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { this.cache = {}; }
+        this.validate();
         this.rooms = [...this.querySelectorAll('[data-room]')].map((b) => {
           let geo = {};
           try { geo = JSON.parse(b.querySelector('[data-geo]').textContent); } catch (e) {}
@@ -177,10 +211,11 @@
         this.$('[data-tiles]').addEventListener('click', (e) => {
           const b = e.target.closest('[data-id]');
           const p = b && this.tiles.find((t) => String(t.id) === b.dataset.id);
-          if (!p || !this.active) return;
-          const v = p.vs.find((x) => x.ok) || p.vs[0] || {};
-          this.cur()[this.active] = { p, vid: v.id, dir: this.active === 'floor' ? 'h' : 'v' };
+          if (!p || !this.active || !p.good) return;
+          const sf = this.active;
+          this.cur()[sf] = { p, vid: p.good.id, dir: sf === 'floor' ? 'h' : 'v' };
           this.update();
+          this.goodVariants(p).then(() => this.update());
         });
         this.$('[data-variant]').addEventListener('change', (e) => { const c = this.cur()[this.active]; if (c) { c.vid = +e.target.value; this.update(); } });
         this.$('[data-dir]').addEventListener('change', (e) => { const c = this.cur()[this.active]; if (c) { c.dir = e.target.value; this.update(); } });
@@ -196,6 +231,32 @@
         if (this.rooms.length) this.setRoom(0);
       }
       cur() { return (this.choice[this.ri] = this.choice[this.ri] || {}); }
+      async ok(v) {
+        if (!(v.img in this.cache)) {
+          this.cache[v.img] = await tileCheck(v.img, v.z);
+          try { localStorage.setItem(CACHE, JSON.stringify(this.cache)); } catch (e) {}
+        }
+        return this.cache[v.img];
+      }
+      // Je Produkt die erste Variante mit echter Fliesenoberfläche suchen (6 Bilder gleichzeitig); Liste wächst mit
+      async validate() {
+        const queue = this.tiles.slice();
+        const work = async () => {
+          for (let p; (p = queue.shift()); ) {
+            for (const v of p.vs) if (await this.ok(v)) { p.good = v; break; }
+            p.done = true;
+            clearTimeout(this.rt);
+            this.rt = setTimeout(() => this.renderTiles(), 120);
+          }
+        };
+        await Promise.all(Array.from({ length: 6 }, work));
+        this.renderTiles();
+      }
+      // Alle Varianten eines gewählten Produkts prüfen, nur echte Oberflächen in der Formatauswahl
+      async goodVariants(p) {
+        if (!p.vsOk) { const r = await Promise.all(p.vs.map((v) => this.ok(v))); p.vsOk = p.vs.filter((v, i) => r[i]); }
+        return p.vsOk;
+      }
       // Flächen eines Raums aus der Vermessung: Rückwand, Seitenwände und Boden über Fluchtpunkt und Tiefe
       build(geo, ratio) {
         const ax = ratio, P = ([x, y]) => [x * ax, y], Q = ([x, y]) => [x / ax, y]; // in gleich große Einheiten umrechnen
@@ -252,7 +313,7 @@
         const lo = Math.min(a, b), hi = Math.max(a, b);
         return c.dir === 'v' ? [lo, hi] : [hi, lo];
       }
-      texture(c) { const v = this.variant(c); return [v.tx, (v.mt || [])[0]].find((x) => typeof x === 'string' && x) || ''; }
+      texture(c) { return this.variant(c).img || ''; }
       paint() {
         if (!this.surf) return;
         const st = this.$('[data-stage]'), W = st.clientWidth, H = st.clientHeight;
@@ -281,7 +342,7 @@
           const x = choice[b.dataset.s];
           b.querySelector('small').innerHTML = x ? '<img src="' + esc(this.texture(x)) + '" alt="">' : '';
         });
-        const vs = c ? c.p.vs : [];
+        const vs = c ? c.p.vsOk || [this.variant(c)] : [];
         this.$('[data-variant]').innerHTML = vs.map((v) => '<option value="' + v.id + '"' + (v.id === c.vid ? ' selected' : '') + '>' + esc(v.t) + '</option>').join('');
         this.$('[data-variant]').disabled = vs.length < 2;
         this.$('[data-dir]').value = c ? c.dir : 'h';
@@ -301,10 +362,12 @@
       renderTiles() {
         const c = this.cur()[this.active];
         this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === this.optic));
-        const list = this.tiles.filter((t) => !this.optic || t.c === this.optic);
+        const all = this.tiles.filter((t) => !this.optic || t.c === this.optic), list = all.filter((t) => t.good);
+        const busy = all.some((t) => !t.done);
         this.$('[data-tiles]').innerHTML = list.map((t) =>
           '<button type="button" class="lc-fr__tile-btn' + (c && c.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
-          '<img src="' + esc(t.vs[0].tx || (t.vs[0].mt || [])[0] || '') + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('') || '<p class="lc-fr__none">Keine Großformate in dieser Auswahl.</p>';
+          '<img src="' + esc(thumb(t.good.img)) + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('') +
+          (busy ? '<p class="lc-fr__none">Weitere Fliesen werden geladen …</p>' : list.length ? '' : '<p class="lc-fr__none">Keine passenden Fliesen in dieser Auswahl.</p>');
       }
     });
   }
@@ -386,7 +449,8 @@
     { "type": "collection", "id": "col_5", "label": "Kollektion 5" },
     { "type": "collection", "id": "col_6", "label": "Kollektion 6" },
     { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 6, "max": 50, "step": 2, "default": 50 },
-    { "type": "range", "id": "min_size", "label": "Mindestformat (beide Seiten, cm)", "min": 30, "max": 160, "step": 10, "default": 120 },
+    { "type": "range", "id": "min_short", "label": "Mindestformat: kurze Seite (cm)", "min": 30, "max": 160, "step": 10, "default": 60 },
+    { "type": "range", "id": "min_long", "label": "Mindestformat: lange Seite (cm)", "min": 60, "max": 320, "step": 10, "default": 120 },
     { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 48 },
     { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 56 }
   ],
