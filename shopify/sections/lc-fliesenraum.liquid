@@ -15,7 +15,7 @@
   assign seen = ','
 -%}
 <section class="lc-fr" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
-  <lc-fliesenraum class="lc-fr__app">
+  <lc-fliesenraum class="lc-fr__app" data-min="{{ s.min_size | default: 120 }}">
     <div class="lc-fr__head">
       <div>
         {%- if s.title != blank -%}<h2>{{ s.title }}</h2>{%- endif -%}
@@ -29,9 +29,13 @@
       {%- if col != blank -%}
         {%- for p in col.products limit: s.per_collection -%}
           {%- assign pid = ',' | append: p.id | append: ',' -%}
+          {%- comment -%} Vorauswahl: nur Produkte mit einer Variante um 120 cm und mehr (genaue Prüfung im Skript) {%- endcomment -%}
+          {%- assign vt = p.variants | map: 'title' | join: ' ' -%}
           {%- unless seen contains pid -%}
-            {%- assign seen = seen | append: p.id | append: ',' -%}
-            <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: col.title -%}</script>
+            {%- if vt contains '120' or vt contains '160' or vt contains '180' or vt contains '260' or vt contains '278' or vt contains '280' or vt contains '300' or vt contains '320' -%}
+              {%- assign seen = seen | append: p.id | append: ',' -%}
+              <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: col.title -%}</script>
+            {%- endif -%}
           {%- endunless -%}
         {%- endfor -%}
       {%- endif -%}
@@ -145,6 +149,14 @@
         this.started = true;
         this.tiles = [];
         this.querySelectorAll('[data-tile-json]').forEach((el) => { try { this.tiles.push(JSON.parse(el.textContent)); } catch (e) {} });
+        // Nur Großformate (beide Seiten mindestens data-min cm) mit eigenem Fliesenbild der Variante
+        const min = +this.dataset.min || 120;
+        const size = (t) => { const m = String(t).match(/(\d+(?:[.,]\d+)?)\s*[×xX]\s*(\d+(?:[.,]\d+)?)/); return m ? [parseFloat(m[1].replace(',', '.')), parseFloat(m[2].replace(',', '.'))] : null; };
+        const real = (x) => typeof x === 'string' && x;
+        this.tiles = this.tiles.map((p) => {
+          p.vs = p.vs.filter((v) => { const z = size(v.t); return z && Math.min(z[0], z[1]) >= min && (real(v.tx) || (v.mt || []).some(real)); });
+          return p;
+        }).filter((p) => p.vs.length);
         this.rooms = [...this.querySelectorAll('[data-room]')].map((b) => {
           let geo = {};
           try { geo = JSON.parse(b.querySelector('[data-geo]').textContent); } catch (e) {}
@@ -240,7 +252,7 @@
         const lo = Math.min(a, b), hi = Math.max(a, b);
         return c.dir === 'v' ? [lo, hi] : [hi, lo];
       }
-      texture(c) { const v = this.variant(c); return [v.tx, (v.mt || [])[0], c.p.tx, (c.p.mt || [])[0], c.p.img].find((x) => typeof x === 'string' && x) || ''; }
+      texture(c) { const v = this.variant(c); return [v.tx, (v.mt || [])[0]].find((x) => typeof x === 'string' && x) || ''; }
       paint() {
         if (!this.surf) return;
         const st = this.$('[data-stage]'), W = st.clientWidth, H = st.clientHeight;
@@ -292,7 +304,7 @@
         const list = this.tiles.filter((t) => !this.optic || t.c === this.optic);
         this.$('[data-tiles]').innerHTML = list.map((t) =>
           '<button type="button" class="lc-fr__tile-btn' + (c && c.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
-          '<img src="' + esc(t.tx || t.img || '') + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('');
+          '<img src="' + esc(t.vs[0].tx || (t.vs[0].mt || [])[0] || '') + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('') || '<p class="lc-fr__none">Keine Großformate in dieser Auswahl.</p>';
       }
     });
   }
@@ -340,6 +352,7 @@
   .lc-fr__optics button { border: 0; background: none; padding: 4px 0; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #8a8a8a; cursor: pointer; border-bottom: 2px solid transparent; }
   .lc-fr__optics button.is-on { color: #111; border-bottom-color: #111; }
   .lc-fr__tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 12px 8px; max-height: 360px; overflow-y: auto; padding: 3px; }
+  .lc-fr__none { grid-column: 1 / -1; margin: 0; font-size: 13px; color: #8a8a8a; }
   .lc-fr__tile-btn { display: grid; gap: 5px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 10px; line-height: 1.25; color: #111; }
   .lc-fr__tile-btn img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: #e9e7e3; outline: 2px solid transparent; outline-offset: 2px; }
   .lc-fr__tile-btn.is-on img { outline-color: #111; }
@@ -372,7 +385,8 @@
     { "type": "collection", "id": "col_4", "label": "Kollektion 4" },
     { "type": "collection", "id": "col_5", "label": "Kollektion 5" },
     { "type": "collection", "id": "col_6", "label": "Kollektion 6" },
-    { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 6, "max": 50, "step": 2, "default": 40 },
+    { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 6, "max": 50, "step": 2, "default": 50 },
+    { "type": "range", "id": "min_size", "label": "Mindestformat (beide Seiten, cm)", "min": 30, "max": 160, "step": 10, "default": 120 },
     { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 48 },
     { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 56 }
   ],
