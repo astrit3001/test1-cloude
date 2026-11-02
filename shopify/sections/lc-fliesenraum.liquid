@@ -176,6 +176,55 @@
       img.src = thumb(url);
     });
 
+    // Verlegebild gegen sichtbare Wiederholung: 4 × 4 Platten, jede mit eigenem Ausschnitt des Fliesenbilds
+    // (im Seitenverhältnis der Platte, also ohne Verzerrung), zufällig gespiegelt oder um 180° gedreht,
+    // nie gleich wie der linke oder obere Nachbar. Zufall fest je Bild, damit die Ansicht ruhig bleibt.
+    const texCache = {};
+    const layTexture = (url, tw, th) => {
+      const key = url + '|' + tw + 'x' + th;
+      if (texCache[key]) return texCache[key];
+      texCache[key] = new Promise((res) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            let seed = 0;
+            for (let i = 0; i < url.length; i++) seed = (seed * 31 + url.charCodeAt(i)) >>> 0;
+            const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+            const N = 4, k = 240 / Math.max(tw, th), cw = Math.round(tw * k), ch = Math.round(th * k);
+            const cv = document.createElement('canvas'); cv.width = cw * N; cv.height = ch * N;
+            const ctx = cv.getContext('2d');
+            const iw = img.naturalWidth, ih = img.naturalHeight;
+            // Hochformat-Bild auf Querformat-Platte (oder umgekehrt): Bild um 90° drehen
+            const turn = (iw > ih) !== (cw > ch) && Math.abs(Math.log(iw / ih)) > 0.15;
+            const sw0 = turn ? ih : iw, sh0 = turn ? iw : ih, a = cw / ch;
+            let sw = sw0, sh = sw0 / a;
+            if (sh > sh0) { sh = sh0; sw = sh0 * a; }
+            sw *= 0.8; sh *= 0.8;
+            const lay = [];
+            for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+              let t;
+              do { t = Math.floor(rnd() * 4); } while ((c && lay[r * N + c - 1] === t) || (r && lay[(r - 1) * N + c] === t));
+              lay.push(t);
+              const fx = t === 1 || t === 3 ? -1 : 1, fy = t === 2 || t === 3 ? -1 : 1;
+              const ox = rnd() * (sw0 - sw), oy = rnd() * (sh0 - sh);
+              ctx.save();
+              ctx.translate(c * cw + cw / 2, r * ch + ch / 2);
+              ctx.scale(fx, fy);
+              if (turn) {
+                ctx.rotate(Math.PI / 2);
+                ctx.drawImage(img, oy, ox, sh, sw, -ch / 2, -cw / 2, ch, cw);
+              } else ctx.drawImage(img, ox, oy, sw, sh, -cw / 2, -ch / 2, cw, ch);
+              ctx.restore();
+            }
+            cv.toBlob((b) => res(b ? URL.createObjectURL(b) : url), 'image/jpeg', 0.9);
+          } catch (e) { res(url); }
+        };
+        img.onerror = () => res(url);
+        img.src = url;
+      });
+      return texCache[key];
+    };
+
     customElements.define('lc-fliesenraum', class extends HTMLElement {
       $(q) { return this.querySelector(q); }
       connectedCallback() {
@@ -197,6 +246,7 @@
           try { geo = JSON.parse(b.querySelector('[data-geo]').textContent); } catch (e) {}
           return { btn: b, img: b.dataset.img, ratio: +b.dataset.ratio || 1.5, name: b.dataset.name, geo };
         });
+        this.lays = {};
         this.choice = {}; // je Raum: { flächenId: { p, vid, dir } }
         this.grout = 'rgba(235,232,226,.9)';
         this.optic = '';
@@ -329,8 +379,11 @@
           const [tw, th] = this.fmt(c).map((x) => x * PX), g = Math.max(0.6, 0.25 * PX);
           t.style.width = w + 'px';
           t.style.height = h + 'px';
-          t.style.backgroundImage = 'linear-gradient(to right,' + this.grout + ' ' + g + 'px,transparent ' + g + 'px),linear-gradient(to bottom,' + this.grout + ' ' + g + 'px,transparent ' + g + 'px),url("' + this.texture(c) + '")';
-          t.style.backgroundSize = tw + 'px ' + th + 'px';
+          // Erst das Fliesenbild direkt, sobald das Verlegebild fertig ist, dieses (4 × 4 Platten je Bildkachel)
+          const src = this.texture(c), key = src + '|' + tw + 'x' + th, lay = this.lays[key];
+          if (!lay) layTexture(src, tw, th).then((u) => { this.lays[key] = u; this.paint(); });
+          t.style.backgroundImage = 'linear-gradient(to right,' + this.grout + ' ' + g + 'px,transparent ' + g + 'px),linear-gradient(to bottom,' + this.grout + ' ' + g + 'px,transparent ' + g + 'px),url("' + (lay || src) + '")';
+          t.style.backgroundSize = tw + 'px ' + th + 'px,' + tw + 'px ' + th + 'px,' + (lay ? tw * 4 + 'px ' + th * 4 + 'px' : tw + 'px ' + th + 'px');
           // Fliesen von der unteren Kante (Boden: hintere Kante) aus verlegt, Fuge mittig
           t.style.backgroundPosition = 'center ' + (sf.id === 'floor' ? 'top' : 'bottom');
           t.style.transform = matrix3d(w, h, sf.quad.map(([x, y]) => [(x / 100) * W, (y / 100) * H]));
