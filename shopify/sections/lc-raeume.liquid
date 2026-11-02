@@ -25,10 +25,16 @@
     {%- for block in section.blocks -%}
       {%- assign col = block.settings.collection -%}
       <div class="lc-rm__panel" data-panel="{{ forloop.index0 }}"{% unless forloop.first %} hidden{% endunless %}>
-        {%- if col != blank -%}
+        {%- liquid
+          assign plist = block.settings.products
+          if plist == blank and col != blank
+            assign plist = col.products
+          endif
+        -%}
+        {%- if plist != blank -%}
           <div class="lc-rm__rooms">
             {%- assign n = 0 -%}
-            {%- for p in col.products limit: block.settings.limit -%}
+            {%- for p in plist limit: block.settings.limit -%}
               {%- liquid
                 assign room = nil
                 assign swatch = nil
@@ -68,11 +74,14 @@
               -%}
               {%- if room -%}
                 <figure class="lc-rm__room{% if mod == 0 %} is-wide{% endif %}" id="lc-rm-{{ section.id }}-{{ p.id }}">
+                  <div class="lc-rm__img">
                   {{ room | image_url: width: 2000 | image_tag: loading: 'lazy', alt: title, sizes: '(max-width: 749px) 100vw, 50vw', widths: '600, 1000, 1500, 2000' }}
                   <button type="button" class="lc-rm__dot" style="left: {{ hx }}%; top: {{ hy }}%;" aria-label="Fliese anzeigen: {{ title | escape }}"
                     data-dot data-title="{{ title | escape }}" data-vendor="{{ p.vendor | escape }}" data-optic="{{ p.type | escape }}"
                     data-formats="{{ formats | escape }}" data-colors="{{ p.variants.size }}" data-url="{{ p.url }}"
                     data-swatch="{{ swatch | image_url: width: 400 }}"></button>
+                  </div>
+                  <figcaption><span>{{ n | prepend: '0' | slice: -2, 2 }}</span><strong>{{ title }}</strong><a href="{{ p.url }}">Zur Fliese <span aria-hidden="true">→</span></a></figcaption>
                 </figure>
               {%- endif -%}
             {%- endfor -%}
@@ -81,10 +90,10 @@
           <div class="lc-rm__band">
             <div class="lc-rm__band-head">
               <span>Farben &amp; Serien</span>
-              <span>{{ col.products_count }} Serien in {{ block.settings.label }}</span>
+              <span>{% if block.settings.products != blank %}{{ block.settings.products.count }}{% else %}{{ col.products_count }}{% endif %} Serien in {{ block.settings.label }}</span>
             </div>
             <div class="lc-rm__swatches">
-              {%- for p in col.products limit: block.settings.limit -%}
+              {%- for p in plist limit: block.settings.limit -%}
                 {%- liquid
                   assign swatch = nil
                   for im in p.images
@@ -110,7 +119,7 @@
             </div>
           </div>
         {%- else -%}
-          <p class="lc-rm__empty">Bitte im Theme-Editor eine Kollektion für „{{ block.settings.label }}“ wählen.</p>
+          <p class="lc-rm__empty">Bitte im Theme-Editor eine Kollektion oder Produkte für „{{ block.settings.label }}“ wählen.</p>
         {%- endif -%}
       </div>
     {%- endfor -%}
@@ -169,7 +178,7 @@
       }
       // Karte neben der Markierung, innerhalb des Raumbilds; am Handy unten im Bild
       place(dot) {
-        const fig = dot.closest('figure'), c = this.card;
+        const fig = dot.closest('.lc-rm__img'), c = this.card;
         fig.appendChild(c);
         const fw = fig.clientWidth, fh = fig.clientHeight, x = dot.offsetLeft, y = dot.offsetTop, cw = c.offsetWidth, ch = c.offsetHeight;
         if (fw < 560) { c.style.left = '12px'; c.style.top = Math.max(12, fh - ch - 12) + 'px'; return; }
@@ -199,11 +208,17 @@
   .lc-rm__tab:focus-visible, .lc-rm__dot:focus-visible, .lc-rm__swatch:focus-visible { outline: 2px solid #111; outline-offset: 3px; }
   .lc-rm__panel { padding-top: 28px; }
   .lc-rm__panel[hidden] { display: none; }
-  .lc-rm__rooms { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-  .lc-rm__room { position: relative; margin: 0; overflow: hidden; background: #e9e7e3; aspect-ratio: 4 / 3; }
-  .lc-rm__room.is-wide { grid-column: 1 / -1; aspect-ratio: 16 / 9; }
-  @media (max-width: 749px) { .lc-rm__rooms { grid-template-columns: 1fr; } .lc-rm__room, .lc-rm__room.is-wide { aspect-ratio: 4 / 3; } }
-  .lc-rm__room img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lc-rm__rooms { display: grid; grid-template-columns: 1fr 1fr; gap: 44px 18px; padding: 0 max(16px, 3vw) 56px; }
+  .lc-rm__room { margin: 0; display: grid; gap: 0; min-width: 0; }
+  .lc-rm__room.is-wide { grid-column: 1 / -1; }
+  .lc-rm__img { position: relative; overflow: hidden; background: #e9e7e3; aspect-ratio: 4 / 3; }
+  .lc-rm__room.is-wide .lc-rm__img { aspect-ratio: 16 / 9; }
+  @media (max-width: 749px) { .lc-rm__rooms { grid-template-columns: 1fr; gap: 32px; } .lc-rm__room.is-wide .lc-rm__img { aspect-ratio: 4 / 3; } }
+  .lc-rm__img > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lc-rm__room figcaption { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: baseline; padding: 12px 0 0; border-top: 1px solid #111; margin-top: 12px; }
+  .lc-rm__room figcaption > span { font-size: 11px; font-weight: 600; letter-spacing: .12em; color: #8a8a8a; }
+  .lc-rm__room figcaption strong { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .lc-rm__room figcaption a { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #111; text-decoration: none; white-space: nowrap; }
   .lc-rm__dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; padding: 0; border: 0; background: #111; cursor: pointer; box-shadow: 0 0 0 0 rgba(17,17,17,.35); animation: lc-rm-pulse 2.4s ease-out infinite; z-index: 1; }
   .lc-rm__dot::after { content: ""; position: absolute; inset: 7px; background: #fff; }
   .lc-rm__dot.is-on, .lc-rm__dot:hover { background: #fff; }
@@ -248,6 +263,7 @@
       "settings": [
         { "type": "text", "id": "label", "label": "Name der Rubrik", "default": "Bäder" },
         { "type": "collection", "id": "collection", "label": "Kollektion", "info": "Raumbild: Produktbild mit „anwendung“ im Dateinamen. Markierung: Metafeld custom.hotspot (z. B. 50,82)." },
+        { "type": "product_list", "id": "products", "label": "Oder einzelne Produkte (z. B. nur Bäder)", "limit": 24 },
         { "type": "range", "id": "limit", "label": "Anzahl Räume", "min": 3, "max": 24, "step": 3, "default": 9 }
       ]
     }

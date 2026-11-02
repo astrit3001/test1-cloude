@@ -1,0 +1,392 @@
+{%- comment -%}
+  Fliesen im Raum: echte Bad-Fotos aus dem Shop, jede Fläche (Boden, jede Wand) einzeln anklickbar,
+  jede Fliese aus den gewählten Kollektionen einsetzbar. Die Fliese wird perspektivisch (CSS matrix3d)
+  auf die vermessene Fläche gelegt, Licht und Schatten kommen aus dem Foto, Möbel bleiben davor.
+  Vermessung je Raum (Block „Raum“, Feld „Flächen“), alle Werte in % des Bildes:
+    back  [x0, y0, x1, y1]  sichtbare Rückwand (y0 darf negativ sein, wenn die Decke nicht im Bild ist)
+    vp    [x, y]            Fluchtpunkt;  k = Tiefe (2–3);  W = Breite der Rückwand in m
+    surfaces  Liste: type back/left/right/floor oder eigenes quad [[x,y]×4] + size [Breite, Höhe] in m;
+              clip = sichtbarer Bereich (Polygon), shade = Stärke der Fotoschatten 0–1
+    floorX [xl, xr]  hintere Bodenkante, wenn der Boden breiter ist als die Rückwand
+    occ   Möbel/Objekte vor den Flächen: Polygone [[x,y],…] oder Ellipsen {"e":[cx,cy,rx,ry]}
+{%- endcomment -%}
+{%- liquid
+  assign s = section.settings
+  assign seen = ','
+-%}
+<section class="lc-fr" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
+  <lc-fliesenraum class="lc-fr__app">
+    <div class="lc-fr__head">
+      <div>
+        {%- if s.title != blank -%}<h2>{{ s.title }}</h2>{%- endif -%}
+        {%- if s.intro != blank -%}<p>{{ s.intro }}</p>{%- endif -%}
+      </div>
+    </div>
+
+    {%- for i in (1..6) -%}
+      {%- assign key = 'col_' | append: i -%}
+      {%- assign col = s[key] -%}
+      {%- if col != blank -%}
+        {%- for p in col.products limit: s.per_collection -%}
+          {%- assign pid = ',' | append: p.id | append: ',' -%}
+          {%- unless seen contains pid -%}
+            {%- assign seen = seen | append: p.id | append: ',' -%}
+            <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: col.title -%}</script>
+          {%- endunless -%}
+        {%- endfor -%}
+      {%- endif -%}
+    {%- endfor -%}
+
+    <div class="lc-fr__rooms" role="tablist" aria-label="Bad wählen">
+      {%- for block in section.blocks -%}
+        {%- liquid
+          assign p = block.settings.product
+          assign room = nil
+          if p != blank
+            for im in p.images
+              if room == nil and im.src contains 'anwendung'
+                assign room = im
+              endif
+            endfor
+            if room == nil
+              assign room = p.featured_image
+            endif
+          endif
+        -%}
+        {%- if room -%}
+          <button type="button" class="lc-fr__room{% if forloop.first %} is-on{% endif %}" data-room="{{ forloop.index0 }}" {{ block.shopify_attributes }}
+            data-img="{{ room | image_url: width: 1800 }}" data-ratio="{{ room.aspect_ratio }}" data-name="{{ block.settings.name | default: p.title | escape }}">
+            {{ room | image_url: width: 300 | image_tag: loading: 'lazy', alt: '' }}
+            <span>{{ forloop.index | prepend: '0' | slice: -2, 2 }} · {{ block.settings.name | default: p.title }}</span>
+            <script type="application/json" data-geo>{{ block.settings.geo }}</script>
+          </button>
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+
+    <div class="lc-fr__main">
+      <div class="lc-fr__view">
+        <div class="lc-fr__stage" data-stage>
+          <img class="lc-fr__photo" data-photo alt="">
+          <div class="lc-fr__layers" data-layers></div>
+          <div class="lc-fr__occ" data-occ></div>
+          <svg class="lc-fr__hit" data-hit preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true"></svg>
+          <span class="lc-fr__hint" data-hint>Fläche im Bild anklicken</span>
+        </div>
+        <div class="lc-fr__under">
+          <span data-roomname></span>
+          <button type="button" class="lc-fr__link" data-reset>Original zeigen</button>
+        </div>
+      </div>
+
+      <div class="lc-fr__panel">
+        <div class="lc-fr__group">
+          <span class="lc-fr__label">1 · Fläche</span>
+          <div class="lc-fr__surfaces" data-surfaces></div>
+        </div>
+        <div class="lc-fr__group">
+          <span class="lc-fr__label">2 · Fliese <em data-target></em></span>
+          <div class="lc-fr__optics" data-optics></div>
+          <div class="lc-fr__tiles" data-tiles></div>
+          <div class="lc-fr__row">
+            <label class="lc-fr__field">Farbe / Format<select data-variant></select></label>
+            <label class="lc-fr__field">Verlegung<select data-dir><option value="h">quer</option><option value="v">hochkant</option></select></label>
+          </div>
+          <div class="lc-fr__row">
+            <span class="lc-fr__field-l">Fuge</span>
+            <div class="lc-fr__grout" data-grout>
+              <button type="button" data-v="rgba(235,232,226,.9)" style="--c:#ebe8e2" class="is-on" aria-label="Hellgrau"></button>
+              <button type="button" data-v="rgba(160,155,148,.9)" style="--c:#a09b94" aria-label="Zementgrau"></button>
+              <button type="button" data-v="rgba(60,58,55,.9)" style="--c:#3c3a37" aria-label="Anthrazit"></button>
+              <button type="button" data-v="rgba(200,185,160,.9)" style="--c:#c8b9a0" aria-label="Beige"></button>
+            </div>
+          </div>
+        </div>
+        <div class="lc-fr__group">
+          <span class="lc-fr__label">Ihre Auswahl</span>
+          <ul class="lc-fr__sum" data-sum><li class="lc-fr__empty">Noch keine Fliese gewählt.</li></ul>
+        </div>
+      </div>
+    </div>
+  </lc-fliesenraum>
+</section>
+
+{% javascript %}
+  if (!customElements.get('lc-fliesenraum')) {
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const clean = (t) => String(t).replace(/\s*[–-]\s*Preis.*$/i, '').replace(/\s*[–-]\s*(Marmoroptik|Holzoptik|Steinoptik|Betonoptik|Feinsteinzeugfliesen|Wand- und Bodenfliesen)\s*$/i, '');
+    const short = (c) => String(c).split(' – ')[0].replace(/^Fliesen in /, '').replace('Beton- & Zementoptik', 'Betonoptik');
+    const NAMES = { back: 'Rückwand', left: 'Wand links', right: 'Wand rechts', floor: 'Boden' };
+    const PX = 2; // Pixel je cm auf der ungedrehten Fläche
+    // Einheitsquadrat -> Viereck (Projektivabbildung), als CSS matrix3d für ein Element der Größe w×h
+    const matrix3d = (w, h, q) => {
+      const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+      const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+      const den = dx1 * dy2 - dx2 * dy1;
+      const g = (dx3 * dy2 - dx2 * dy3) / den, hh = (dx1 * dy3 - dx3 * dy1) / den;
+      const a = x1 - x0 + g * x1, b = x3 - x0 + hh * x3, d = y1 - y0 + g * y1, e = y3 - y0 + hh * y3;
+      return 'matrix3d(' + [a / w, d / w, 0, g / w, b / h, e / h, 0, hh / h, 0, 0, 1, 0, x0, y0, 0, 1].map((v) => +v.toFixed(8)).join(',') + ')';
+    };
+    const ellipse = ([cx, cy, rx, ry]) => Array.from({ length: 24 }, (_, i) => [cx + rx * Math.cos((i / 24) * 2 * Math.PI), cy + ry * Math.sin((i / 24) * 2 * Math.PI)]);
+    const poly = (pts) => 'polygon(' + pts.map(([x, y]) => x.toFixed(2) + '% ' + y.toFixed(2) + '%').join(',') + ')';
+    const inside = (pt, pts) => {
+      let c = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i], [xj, yj] = pts[j];
+        if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+
+    customElements.define('lc-fliesenraum', class extends HTMLElement {
+      $(q) { return this.querySelector(q); }
+      connectedCallback() {
+        if (this.started) return;
+        this.started = true;
+        this.tiles = [];
+        this.querySelectorAll('[data-tile-json]').forEach((el) => { try { this.tiles.push(JSON.parse(el.textContent)); } catch (e) {} });
+        this.rooms = [...this.querySelectorAll('[data-room]')].map((b) => {
+          let geo = {};
+          try { geo = JSON.parse(b.querySelector('[data-geo]').textContent); } catch (e) {}
+          return { btn: b, img: b.dataset.img, ratio: +b.dataset.ratio || 1.5, name: b.dataset.name, geo };
+        });
+        this.choice = {}; // je Raum: { flächenId: { p, vid, dir } }
+        this.grout = 'rgba(235,232,226,.9)';
+        this.optic = '';
+        this.querySelectorAll('[data-room]').forEach((b) => b.addEventListener('click', () => this.setRoom(+b.dataset.room)));
+        this.$('[data-surfaces]').addEventListener('click', (e) => { const b = e.target.closest('[data-s]'); if (b) this.setSurface(b.dataset.s); });
+        this.$('[data-hit]').addEventListener('click', (e) => {
+          const r = e.currentTarget.getBoundingClientRect(), pt = [((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100];
+          if (this.occ.some((o) => inside(pt, o))) return;
+          const hit = this.surf.find((sf) => inside(pt, sf.vis));
+          if (hit) this.setSurface(hit.id);
+        });
+        this.$('[data-optics]').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { this.optic = b.dataset.v; this.renderTiles(); } });
+        this.$('[data-tiles]').addEventListener('click', (e) => {
+          const b = e.target.closest('[data-id]');
+          const p = b && this.tiles.find((t) => String(t.id) === b.dataset.id);
+          if (!p || !this.active) return;
+          const v = p.vs.find((x) => x.ok) || p.vs[0] || {};
+          this.cur()[this.active] = { p, vid: v.id, dir: this.active === 'floor' ? 'h' : 'v' };
+          this.update();
+        });
+        this.$('[data-variant]').addEventListener('change', (e) => { const c = this.cur()[this.active]; if (c) { c.vid = +e.target.value; this.update(); } });
+        this.$('[data-dir]').addEventListener('change', (e) => { const c = this.cur()[this.active]; if (c) { c.dir = e.target.value; this.update(); } });
+        this.$('[data-grout]').addEventListener('click', (e) => {
+          const b = e.target.closest('button'); if (!b) return;
+          this.grout = b.dataset.v;
+          this.$('[data-grout]').querySelectorAll('button').forEach((x) => x.classList.toggle('is-on', x === b));
+          this.paint();
+        });
+        this.$('[data-reset]').addEventListener('click', () => { this.choice[this.ri] = {}; this.update(); });
+        new ResizeObserver(() => this.paint()).observe(this.$('[data-stage]'));
+        this.renderOptics();
+        if (this.rooms.length) this.setRoom(0);
+      }
+      cur() { return (this.choice[this.ri] = this.choice[this.ri] || {}); }
+      // Flächen eines Raums aus der Vermessung: Rückwand, Seitenwände und Boden über Fluchtpunkt und Tiefe
+      build(geo, ratio) {
+        const ax = ratio, P = ([x, y]) => [x * ax, y], Q = ([x, y]) => [x / ax, y]; // in gleich große Einheiten umrechnen
+        const [bx0, by0, bx1, by1] = geo.back || [20, 0, 80, 80];
+        const vp = P(geo.vp || [50, 45]), k = geo.k || 2.4, W = geo.W || 2.6;
+        const sc = (pt) => { const q = P(pt); return Q([vp[0] + k * (q[0] - vp[0]), vp[1] + k * (q[1] - vp[1])]); };
+        const TL = [bx0, by0], TR = [bx1, by0], BR = [bx1, by1], BL = [bx0, by1];
+        const bw = (bx1 - bx0) * ax, bh = by1 - by0, H = (W * bh) / bw;
+        const f = 0.9 * 100 * ax, Z = (W * f) / bw, D = Z * (1 - 1 / k);
+        const fx = geo.floorX || [bx0, bx1], FL = [fx[0], by1], FR = [fx[1], by1];
+        const std = {
+          back: { quad: [TL, TR, BR, BL], size: [W, H] },
+          left: { quad: [sc(TL), TL, BL, sc(BL)], size: [D, H] },
+          right: { quad: [TR, sc(TR), sc(BR), BR], size: [D, H] },
+          floor: { quad: [FL, FR, sc(FR), sc(FL)], size: [(W * (fx[1] - fx[0])) / (bx1 - bx0), D] },
+        };
+        return (geo.surfaces || []).map((sf, i) => {
+          const base = sf.quad ? { quad: sf.quad, size: sf.size || [1, 1] } : std[sf.type] || std.back;
+          return { id: sf.id || sf.type || 's' + i, name: sf.name || NAMES[sf.type] || 'Fläche', quad: base.quad, size: base.size, clip: sf.clip || base.quad, vis: sf.clip || base.quad, shade: sf.shade === undefined ? 0.5 : sf.shade };
+        });
+      }
+      setRoom(i) {
+        this.ri = i;
+        const r = this.rooms[i];
+        this.rooms.forEach((x, j) => x.btn.classList.toggle('is-on', j === i));
+        const st = this.$('[data-stage]');
+        st.style.aspectRatio = r.ratio;
+        this.$('[data-photo]').src = r.img;
+        this.$('[data-roomname]').textContent = String(i + 1).padStart(2, '0') + ' · ' + r.name;
+        this.surf = this.build(r.geo, r.ratio);
+        this.occ = (r.geo.occ || []).map((o) => (o.e ? ellipse(o.e) : o));
+        // Fotoschatten: unscharfe Graustufen-Kopie des Fotos je Fläche; Möbel: Foto-Ausschnitte obenauf
+        this.$('[data-layers]').innerHTML = this.surf.map((sf) =>
+          '<div class="lc-fr__surf" data-sf="' + sf.id + '" style="clip-path:' + poly(sf.clip) + '"><div class="lc-fr__tile"></div>' +
+          '<img class="lc-fr__shade" src="' + esc(r.img) + '" alt="" style="opacity:' + sf.shade + '"></div>').join('');
+        this.$('[data-occ]').innerHTML = this.occ.map((o) => '<img src="' + esc(r.img) + '" alt="" style="clip-path:' + poly(o) + '">').join('');
+        this.$('[data-hit]').innerHTML = this.surf.map((sf) => '<polygon data-hp="' + sf.id + '" points="' + sf.vis.map((p) => p.join(',')).join(' ') + '"/>').join('');
+        this.$('[data-surfaces]').innerHTML = this.surf.map((sf) => '<button type="button" data-s="' + sf.id + '">' + esc(sf.name) + '<small></small></button>').join('');
+        this.setSurface(this.surf.find((s) => s.id === 'floor') ? 'floor' : this.surf[0].id);
+      }
+      setSurface(id) {
+        this.active = id;
+        this.querySelectorAll('[data-s]').forEach((b) => b.classList.toggle('is-on', b.dataset.s === id));
+        this.querySelectorAll('[data-hp]').forEach((p) => p.classList.toggle('is-on', p.dataset.hp === id));
+        const sf = this.surf.find((s) => s.id === id);
+        this.$('[data-target]').textContent = 'für ' + (sf ? sf.name : '');
+        this.$('[data-hint]').hidden = true;
+        this.update();
+      }
+      variant(c) { return c.p.vs.find((v) => v.id === c.vid) || c.p.vs[0] || { t: '' }; }
+      fmt(c) {
+        const v = this.variant(c), m = String(v.t).match(/(\d+(?:[.,]\d+)?)\s*[×xX]\s*(\d+(?:[.,]\d+)?)/) || String(c.p.t).match(/(\d+(?:[.,]\d+)?)\s*[×xX]\s*(\d+(?:[.,]\d+)?)/);
+        let a = m ? parseFloat(m[1].replace(',', '.')) : 60, b = m ? parseFloat(m[2].replace(',', '.')) : 60;
+        const lo = Math.min(a, b), hi = Math.max(a, b);
+        return c.dir === 'v' ? [lo, hi] : [hi, lo];
+      }
+      texture(c) { const v = this.variant(c); return [v.tx, (v.mt || [])[0], c.p.tx, (c.p.mt || [])[0], c.p.img].find((x) => typeof x === 'string' && x) || ''; }
+      paint() {
+        if (!this.surf) return;
+        const st = this.$('[data-stage]'), W = st.clientWidth, H = st.clientHeight;
+        if (!W || !H) return;
+        const choice = this.cur();
+        this.surf.forEach((sf) => {
+          const box = this.querySelector('[data-sf="' + sf.id + '"]');
+          const c = choice[sf.id];
+          box.hidden = !c;
+          if (!c) return;
+          const t = box.querySelector('.lc-fr__tile'), w = sf.size[0] * 100 * PX, h = sf.size[1] * 100 * PX;
+          const [tw, th] = this.fmt(c).map((x) => x * PX), g = Math.max(0.6, 0.25 * PX);
+          t.style.width = w + 'px';
+          t.style.height = h + 'px';
+          t.style.backgroundImage = 'linear-gradient(to right,' + this.grout + ' ' + g + 'px,transparent ' + g + 'px),linear-gradient(to bottom,' + this.grout + ' ' + g + 'px,transparent ' + g + 'px),url("' + this.texture(c) + '")';
+          t.style.backgroundSize = tw + 'px ' + th + 'px';
+          // Fliesen von der unteren Kante (Boden: hintere Kante) aus verlegt, Fuge mittig
+          t.style.backgroundPosition = 'center ' + (sf.id === 'floor' ? 'top' : 'bottom');
+          t.style.transform = matrix3d(w, h, sf.quad.map(([x, y]) => [(x / 100) * W, (y / 100) * H]));
+        });
+      }
+      update() {
+        const choice = this.cur(), c = choice[this.active];
+        // Flächenliste: gewählte Fliese als kleines Bild
+        this.querySelectorAll('[data-s]').forEach((b) => {
+          const x = choice[b.dataset.s];
+          b.querySelector('small').innerHTML = x ? '<img src="' + esc(this.texture(x)) + '" alt="">' : '';
+        });
+        const vs = c ? c.p.vs : [];
+        this.$('[data-variant]').innerHTML = vs.map((v) => '<option value="' + v.id + '"' + (v.id === c.vid ? ' selected' : '') + '>' + esc(v.t) + '</option>').join('');
+        this.$('[data-variant]').disabled = vs.length < 2;
+        this.$('[data-dir]').value = c ? c.dir : 'h';
+        this.$('[data-dir]').disabled = !c;
+        this.renderTiles();
+        const rows = this.surf.filter((sf) => choice[sf.id]);
+        this.$('[data-sum]').innerHTML = rows.length ? rows.map((sf) => {
+          const x = choice[sf.id], v = this.variant(x);
+          return '<li><span>' + esc(sf.name) + '</span><a href="' + esc(x.p.u) + '">' + esc(clean(x.p.t)) + (x.p.vs.length > 1 ? ' – ' + esc(v.t) : '') + '</a></li>';
+        }).join('') : '<li class="lc-fr__empty">Noch keine Fliese gewählt.</li>';
+        this.paint();
+      }
+      renderOptics() {
+        const cats = [...new Set(this.tiles.map((t) => t.c))];
+        this.$('[data-optics]').innerHTML = ['<button type="button" data-v="" class="is-on">Alle</button>'].concat(cats.map((c) => '<button type="button" data-v="' + esc(c) + '">' + esc(short(c)) + '</button>')).join('');
+      }
+      renderTiles() {
+        const c = this.cur()[this.active];
+        this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === this.optic));
+        const list = this.tiles.filter((t) => !this.optic || t.c === this.optic);
+        this.$('[data-tiles]').innerHTML = list.map((t) =>
+          '<button type="button" class="lc-fr__tile-btn' + (c && c.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
+          '<img src="' + esc(t.tx || t.img || '') + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('');
+      }
+    });
+  }
+{% endjavascript %}
+
+{% stylesheet %}
+  .lc-fr { background: #fafaf9; color: #111; }
+  .lc-fr__head { margin: 0 max(16px, 3vw); padding-bottom: 20px; border-bottom: 1px solid #111; }
+  .lc-fr__head h2 { margin: 0; font-size: clamp(28px, 4vw, 44px); font-weight: 600; letter-spacing: -.01em; line-height: 1.05; }
+  .lc-fr__head p { margin: 10px 0 0; max-width: 620px; font-size: 14px; line-height: 1.55; color: #555; }
+  .lc-fr__rooms { display: flex; gap: 12px; overflow-x: auto; padding: 22px max(16px, 3vw) 6px; scrollbar-width: thin; }
+  .lc-fr__room { flex: 0 0 auto; width: 170px; display: grid; gap: 8px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; color: #8a8a8a; }
+  .lc-fr__room img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; outline: 2px solid transparent; outline-offset: 3px; transition: outline-color .2s; }
+  .lc-fr__room span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .lc-fr__room.is-on { color: #111; }
+  .lc-fr__room.is-on img { outline-color: #111; }
+  .lc-fr__main { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr); gap: 28px; padding: 22px max(16px, 3vw) 0; align-items: start; }
+  @media (max-width: 989px) { .lc-fr__main { grid-template-columns: 1fr; } }
+  .lc-fr__view { position: sticky; top: 16px; }
+  @media (max-width: 989px) { .lc-fr__view { position: static; } }
+  .lc-fr__stage { position: relative; width: 100%; overflow: hidden; background: #e9e7e3; }
+  .lc-fr__stage img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; pointer-events: none; }
+  .lc-fr__layers, .lc-fr__occ { position: absolute; inset: 0; pointer-events: none; }
+  .lc-fr__surf { position: absolute; inset: 0; overflow: hidden; }
+  .lc-fr__surf[hidden] { display: none; }
+  .lc-fr__tile { position: absolute; left: 0; top: 0; transform-origin: 0 0; background-repeat: repeat; backface-visibility: hidden; }
+  .lc-fr__shade { mix-blend-mode: multiply; filter: grayscale(1) blur(10px) brightness(1.35) contrast(1.15); }
+  .lc-fr__occ img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .lc-fr__hit { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+  .lc-fr__hit polygon { fill: transparent; stroke: transparent; vector-effect: non-scaling-stroke; stroke-width: 2; transition: fill .2s; }
+  .lc-fr__hit polygon:hover { fill: rgba(255,255,255,.12); stroke: rgba(255,255,255,.7); }
+  .lc-fr__hit polygon.is-on { stroke: #fff; stroke-dasharray: 6 4; }
+  .lc-fr__hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: #111; color: #fff; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; padding: 8px 14px; pointer-events: none; }
+  .lc-fr__under { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #111; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  .lc-fr__link { border: 0; background: none; padding: 0; font: inherit; color: #555; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .lc-fr__panel { display: grid; gap: 26px; }
+  .lc-fr__group { display: grid; gap: 12px; }
+  .lc-fr__label { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  .lc-fr__label em { font-style: normal; color: #8a8a8a; letter-spacing: .08em; }
+  .lc-fr__surfaces { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .lc-fr__surfaces button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 6px 6px 6px 12px; border: 1px solid #d6d3ce; background: #fff; font: inherit; font-size: 13px; text-align: left; cursor: pointer; color: #111; }
+  .lc-fr__surfaces button.is-on { border-color: #111; box-shadow: inset 0 0 0 1px #111; }
+  .lc-fr__surfaces small img { width: 30px; height: 30px; object-fit: cover; display: block; }
+  .lc-fr__optics { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .lc-fr__optics button { border: 0; background: none; padding: 4px 0; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #8a8a8a; cursor: pointer; border-bottom: 2px solid transparent; }
+  .lc-fr__optics button.is-on { color: #111; border-bottom-color: #111; }
+  .lc-fr__tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 12px 8px; max-height: 360px; overflow-y: auto; padding: 3px; }
+  .lc-fr__tile-btn { display: grid; gap: 5px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 10px; line-height: 1.25; color: #111; }
+  .lc-fr__tile-btn img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: #e9e7e3; outline: 2px solid transparent; outline-offset: 2px; }
+  .lc-fr__tile-btn.is-on img { outline-color: #111; }
+  .lc-fr__tile-btn span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-transform: uppercase; letter-spacing: .04em; }
+  .lc-fr__row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+  .lc-fr__field { display: grid; gap: 4px; font-size: 11px; color: #555; flex: 1 1 140px; }
+  .lc-fr__field select { padding: 8px; border: 1px solid #d6d3ce; background: #fff; font: inherit; font-size: 13px; color: #111; }
+  .lc-fr__field-l { font-size: 11px; color: #555; }
+  .lc-fr__grout { display: flex; gap: 6px; }
+  .lc-fr__grout button { width: 28px; height: 28px; padding: 0; border: 1px solid #d6d3ce; background: var(--c); cursor: pointer; }
+  .lc-fr__grout button.is-on { outline: 2px solid #111; outline-offset: 2px; }
+  .lc-fr__sum { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .lc-fr__sum li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid #e3e0db; }
+  .lc-fr__sum span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #8a8a8a; }
+  .lc-fr__sum a { color: #111; }
+  .lc-fr__sum .lc-fr__empty { display: block; color: #8a8a8a; border: 0; }
+  .lc-fr button:focus-visible, .lc-fr select:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "LC Fliesen im Raum",
+  "settings": [
+    { "type": "text", "id": "title", "label": "Überschrift", "default": "Fliesen im Bad ausprobieren" },
+    { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Bad wählen, Boden oder eine Wand im Bild anklicken und eine Fliese aus unserem Sortiment einsetzen. Jede Fläche einzeln." },
+    { "type": "header", "content": "Fliesen zur Auswahl" },
+    { "type": "collection", "id": "col_1", "label": "Kollektion 1" },
+    { "type": "collection", "id": "col_2", "label": "Kollektion 2" },
+    { "type": "collection", "id": "col_3", "label": "Kollektion 3" },
+    { "type": "collection", "id": "col_4", "label": "Kollektion 4" },
+    { "type": "collection", "id": "col_5", "label": "Kollektion 5" },
+    { "type": "collection", "id": "col_6", "label": "Kollektion 6" },
+    { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 6, "max": 50, "step": 2, "default": 40 },
+    { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 48 },
+    { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 56 }
+  ],
+  "blocks": [
+    {
+      "type": "raum",
+      "name": "Raum",
+      "settings": [
+        { "type": "product", "id": "product", "label": "Produkt mit dem Raumbild" },
+        { "type": "text", "id": "name", "label": "Name" },
+        { "type": "textarea", "id": "geo", "label": "Flächen (Vermessung, JSON)" }
+      ]
+    }
+  ],
+  "presets": [{ "name": "LC Fliesen im Raum" }]
+}
+{% endschema %}
