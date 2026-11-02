@@ -85,8 +85,10 @@
         </div>
         <div class="lc-fr__group">
           <span class="lc-fr__label">2 · Fliese <em data-target></em></span>
+          <input type="search" class="lc-fr__search" data-search placeholder="Fliese suchen – Name, Serie oder Hersteller" aria-label="Fliese suchen">
           <div class="lc-fr__optics" data-optics></div>
           <div class="lc-fr__tiles" data-tiles></div>
+          <button type="button" class="lc-fr__more" data-more hidden>Weitere Fliesen anzeigen</button>
           <div class="lc-fr__row">
             <label class="lc-fr__field">Farbe / Format<select data-variant></select></label>
             <label class="lc-fr__field">Verlegung<select data-dir><option value="h">quer</option><option value="v">hochkant</option></select></label>
@@ -230,6 +232,9 @@
         this.minL = +this.dataset.minLong || 0;
         try { this.sources = JSON.parse(this.$('[data-sources]').textContent); } catch (e) { this.sources = []; }
         this.loaded = {};
+        this.byId = {};
+        this.q = '';
+        this.show = 60;
         try { this.cache = JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { this.cache = {}; }
         this.rooms = [...this.querySelectorAll('[data-room]')].map((b) => {
           let geo = {};
@@ -248,7 +253,21 @@
           const hit = this.surf.find((sf) => inside(pt, sf.vis));
           if (hit) this.setSurface(hit.id);
         });
-        this.$('[data-optics]').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { this.optic = b.dataset.v; this.loadOptic(); this.renderTiles(); } });
+        this.$('[data-optics]').addEventListener('click', (e) => {
+          const b = e.target.closest('button'); if (!b) return;
+          this.optic = b.dataset.v; this.q = ''; this.$('[data-search]').value = ''; this.show = 60;
+          this.loadOptic(); this.renderTiles(); this.pump();
+        });
+        // Suche über das ganze Sortiment: lädt bei Bedarf „Alle Fliesen“ nach
+        this.$('[data-search]').addEventListener('input', (e) => {
+          clearTimeout(this.st);
+          this.st = setTimeout(() => {
+            this.q = e.target.value.trim().toLowerCase(); this.show = 60;
+            if (this.q) { const all = this.sources[this.sources.length - 1]; if (all) this.loadOptic(all); }
+            this.renderTiles(); this.pump();
+          }, 250);
+        });
+        this.$('[data-more]').addEventListener('click', () => { this.show += 60; this.renderTiles(); this.pump(); });
         this.$('[data-tiles]').addEventListener('click', (e) => {
           const b = e.target.closest('[data-id]');
           const p = b && this.tiles.find((t) => String(t.id) === b.dataset.id);
@@ -316,20 +335,19 @@
       }
       // Alle Produkte einer Optik aus dem Shop laden (Storefront-JSON, 250 je Seite); Bilder über die Shop-Domain,
       // damit die Bildprüfung die Pixel lesen darf. Produkte aus früheren Optiken werden nicht doppelt gezeigt.
-      async loadOptic() {
-        const src = this.sources.find((x) => x.l === this.optic);
+      async loadOptic(force) {
+        const src = force || this.sources.find((x) => x.l === this.optic);
         if (!src || this.loaded[src.h]) return;
         this.loaded[src.h] = 'busy';
         const same = (u) => u && u.replace(/^(https?:)?\/\/cdn\.shopify\.com\/s\/files\/[\d/]+\/files\//, '/cdn/shop/files/');
         const w = (u) => u && same(u) + (u.indexOf('?') > -1 ? '&' : '?') + 'width=1024';
-        const seen = new Set(this.tiles.map((t) => t.id)), list = [];
+        const list = [];
         for (let page = 1; page < 20; page++) {
           let data;
           try { data = await (await fetch('/collections/' + src.h + '/products.json?limit=250&page=' + page)).json(); } catch (e) { break; }
           const ps = (data && data.products) || [];
           ps.forEach((p) => {
-            if (seen.has(p.id)) return;
-            seen.add(p.id);
+            if (this.byId[p.id]) { this.byId[p.id].cats.add(src.l); return; }
             const imgs = (p.images || []).filter((im) => !/anwendung/i.test(im.src));
             const vs = (p.variants || []).map((v) => {
               const own = (v.featured_image && v.featured_image.src) || (imgs.find((im) => (im.variant_ids || []).indexOf(v.id) > -1) || {}).src;
@@ -337,28 +355,39 @@
               const z = size(v.title) || size(p.title) || [60, 60];
               return { id: v.id, t: v.title, img: w(img), z, ok: v.available };
             }).filter((v) => v.img && Math.min(...v.z) >= this.minS && Math.max(...v.z) >= this.minL);
-            if (vs.length) list.push({ id: p.id, c: src.l, t: p.title, u: '/products/' + p.handle, vs });
+            if (vs.length) { const t = { id: p.id, cats: new Set([src.l]), t: p.title, v: p.vendor || '', u: '/products/' + p.handle, vs }; this.byId[p.id] = t; list.push(t); }
           });
           if (ps.length < 250) break;
         }
         this.tiles.push(...list);
         this.loaded[src.h] = true;
         this.renderTiles();
-        this.validate(list);
+        this.pump();
       }
-      // Je Produkt die erste Variante mit echter Fliesenoberfläche suchen (6 Bilder gleichzeitig); Liste wächst mit
-      async validate(items) {
-        const queue = items.slice();
-        const work = async () => {
-          for (let p; (p = queue.shift()); ) {
-            for (const v of p.vs) if (await this.ok(v)) { p.good = v; break; }
-            p.done = true;
-            clearTimeout(this.rt);
-            this.rt = setTimeout(() => this.renderTiles(), 120);
+      // Fliesen der aktuellen Ansicht (Reiter oder Suche)
+      visible() {
+        if (this.q) return this.tiles.filter((t) => (t.t + ' ' + t.v).toLowerCase().indexOf(this.q) > -1);
+        return this.tiles.filter((t) => t.cats.has(this.optic));
+      }
+      // Bildprüfung nur so weit wie nötig: bis die Ansicht this.show echte Fliesen hat (6 Bilder gleichzeitig)
+      async pump() {
+        if (this.pumping) { this.again = true; return; }
+        this.pumping = true;
+        try {
+          for (;;) {
+            const vis = this.visible(), todo = vis.filter((t) => !t.done);
+            if (!todo.length || vis.filter((t) => t.good).length >= this.show) break;
+            await Promise.all(todo.slice(0, 6).map(async (p) => {
+              for (const v of p.vs) if (await this.ok(v)) { p.good = v; break; }
+              p.done = true;
+            }));
+            this.renderTiles();
           }
-        };
-        await Promise.all(Array.from({ length: 6 }, work));
-        this.renderTiles();
+        } finally {
+          this.pumping = false;
+          this.renderTiles();
+          if (this.again) { this.again = false; this.pump(); }
+        }
       }
       // Alle Varianten eines gewählten Produkts prüfen, nur echte Oberflächen in der Formatauswahl
       async goodVariants(p) {
@@ -471,14 +500,16 @@
       }
       renderTiles() {
         const c = this.cur()[this.active];
-        this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === this.optic));
-        const all = this.tiles.filter((t) => t.c === this.optic), list = all.filter((t) => t.good);
-        const src = this.sources.find((x) => x.l === this.optic);
-        const busy = (src && this.loaded[src.h] !== true) || all.some((t) => !t.done);
+        this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', !this.q && b.dataset.v === this.optic));
+        const vis = this.visible(), good = vis.filter((t) => t.good), list = good.slice(0, this.show);
+        const src = this.q ? this.sources[this.sources.length - 1] : this.sources.find((x) => x.l === this.optic);
+        const loading = src && this.loaded[src.h] !== true;
+        const busy = loading || (good.length < this.show && vis.some((t) => !t.done));
+        this.$('[data-more]').hidden = busy || !(good.length > this.show || vis.some((t) => !t.done));
         this.$('[data-tiles]').innerHTML = list.map((t) =>
           '<button type="button" class="lc-fr__tile-btn' + (c && c.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
           '<img src="' + esc(thumb(t.good.img)) + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('') +
-          (busy ? '<p class="lc-fr__none">Weitere Fliesen werden geladen …</p>' : list.length ? '' : '<p class="lc-fr__none">Keine passenden Fliesen in dieser Auswahl.</p>');
+          (busy ? '<p class="lc-fr__none">Fliesen werden geladen …</p>' : list.length ? '' : '<p class="lc-fr__none">' + (this.q ? 'Keine Fliese zu „' + esc(this.q) + '“ gefunden.' : 'Keine passenden Fliesen in dieser Auswahl.') + '</p>');
       }
     });
   }
@@ -526,6 +557,9 @@
   .lc-fr__optics button { border: 0; background: none; padding: 4px 0; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #8a8a8a; cursor: pointer; border-bottom: 2px solid transparent; }
   .lc-fr__optics button.is-on { color: #111; border-bottom-color: #111; }
   .lc-fr__tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 12px 8px; max-height: 360px; overflow-y: auto; padding: 3px; }
+  .lc-fr__search { width: 100%; padding: 10px 12px; border: 1px solid #d6d3ce; background: #fff; font: inherit; font-size: 14px; color: #111; }
+  .lc-fr__more { justify-self: start; border: 1px solid #111; background: #fff; padding: 9px 14px; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; color: #111; }
+  .lc-fr__more[hidden] { display: none; }
   .lc-fr__none { grid-column: 1 / -1; margin: 0; font-size: 13px; color: #8a8a8a; }
   .lc-fr__tile-btn { display: grid; gap: 5px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 10px; line-height: 1.25; color: #111; }
   .lc-fr__tile-btn img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: #e9e7e3; outline: 2px solid transparent; outline-offset: 2px; }
@@ -553,7 +587,7 @@
     { "type": "text", "id": "title", "label": "Überschrift", "default": "Fliesen im Bad ausprobieren" },
     { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Bad wählen, Boden oder eine Wand im Bild anklicken und eine Fliese aus unserem Sortiment einsetzen. Jede Fläche einzeln." },
     { "type": "header", "content": "Fliesen zur Auswahl" },
-    { "type": "textarea", "id": "sources", "label": "Optiken: je Zeile Kollektion-Handle|Name", "info": "Reihenfolge = Reiter. Produkte, die schon in einem früheren Reiter vorkommen, erscheinen nicht doppelt.", "default": "fliesen-marmoroptik|Marmoroptik\nfliesen-steinoptik|Steinoptik\nfliesen-betonoptik|Betonoptik\nfliesen-holzoptik|Holzoptik\nfliesen-grossformat|Großformat\nmosaike|Mosaik\nfliesen|Weitere Fliesen" },
+    { "type": "textarea", "id": "sources", "label": "Optiken: je Zeile Kollektion-Handle|Name", "default": "fliesen-marmoroptik|Marmoroptik\nfliesen-steinoptik|Steinoptik\nfliesen-betonoptik|Betonoptik\nfliesen-holzoptik|Holzoptik\nfliesen-grossformat|Großformat\nmosaike|Mosaik\nfliesen|Alle Fliesen", "info": "Reihenfolge = Reiter. Die letzte Zeile sollte die Kollektion mit allen Fliesen sein – die Suche durchsucht sie." },
     { "type": "range", "id": "min_short", "label": "Mindestformat: kurze Seite (cm), 0 = alle", "min": 0, "max": 160, "step": 10, "default": 0 },
     { "type": "range", "id": "min_long", "label": "Mindestformat: lange Seite (cm), 0 = alle", "min": 0, "max": 320, "step": 10, "default": 0 },
     { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 48 },

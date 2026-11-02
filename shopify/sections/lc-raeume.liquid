@@ -14,6 +14,9 @@
       <div class="lc-rm__title">
         {%- if s.title != blank -%}<h2>{{ s.title }}</h2>{%- endif -%}
         {%- if s.intro != blank -%}<p>{{ s.intro }}</p>{%- endif -%}
+        {%- if s.cta_url != blank -%}
+          <a href="{{ s.cta_url }}" style="display:inline-flex;align-items:center;gap:10px;margin-top:16px;background:#111;color:#fff;text-decoration:none;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;padding:12px 18px">{{ s.cta_label | default: 'Zum Fliesen-Visualizer' }} <span aria-hidden="true">→</span></a>
+        {%- endif -%}
       </div>
       <nav class="lc-rm__tabs" aria-label="Rubriken">
         {%- for block in section.blocks -%}
@@ -253,6 +256,8 @@
   "settings": [
     { "type": "text", "id": "title", "label": "Überschrift", "default": "Räume" },
     { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Fertige Räume mit unseren Fliesen. Auf die Markierung im Bild klicken, um zu sehen, welche Fliese verlegt ist." },
+    { "type": "text", "id": "cta_label", "label": "Knopf: Text", "default": "Fliesen selbst ausprobieren – zum Fliesen-Visualizer" },
+    { "type": "text", "id": "cta_url", "label": "Knopf: Link (Seite mit dem Fliesen-Visualizer)" },
     { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 40 },
     { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 0 }
   ],
