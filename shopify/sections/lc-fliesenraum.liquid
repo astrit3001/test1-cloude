@@ -115,7 +115,8 @@
   </lc-fliesenraum>
 </section>
 
-{% javascript %}
+{%- comment -%} Skript direkt in der Seite (nicht im Shopify-Skriptpaket), damit Änderungen sofort gelten {%- endcomment -%}
+<script>
   if (!customElements.get('lc-fliesenraum')) {
     const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
     const clean = (t) => String(t).replace(/\s*[–-]\s*Preis.*$/i, '').replace(/\s*[–-]\s*(Marmoroptik|Holzoptik|Steinoptik|Betonoptik|Feinsteinzeugfliesen|Wand- und Bodenfliesen)\s*$/i, '');
@@ -371,7 +372,7 @@
       }
     });
   }
-{% endjavascript %}
+</script>
 
 {% stylesheet %}
   .lc-fr { background: #fafaf9; color: #111; }
