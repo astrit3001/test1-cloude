@@ -15,7 +15,7 @@
   assign seen = ','
 -%}
 <section class="lc-fr" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
-  <lc-fliesenraum class="lc-fr__app" data-min-short="{{ s.min_short | default: 60 }}" data-min-long="{{ s.min_long | default: 120 }}">
+  <lc-fliesenraum class="lc-fr__app" data-min-short="{{ s.min_short | default: 0 }}" data-min-long="{{ s.min_long | default: 0 }}">
     <div class="lc-fr__head">
       <div>
         {%- if s.title != blank -%}<h2>{{ s.title }}</h2>{%- endif -%}
@@ -23,23 +23,18 @@
       </div>
     </div>
 
-    {%- for i in (1..6) -%}
-      {%- assign key = 'col_' | append: i -%}
-      {%- assign col = s[key] -%}
-      {%- if col != blank -%}
-        {%- for p in col.products limit: s.per_collection -%}
-          {%- assign pid = ',' | append: p.id | append: ',' -%}
-          {%- comment -%} Vorauswahl: nur Produkte mit einer Variante um 120 cm und mehr (genaue Prüfung im Skript) {%- endcomment -%}
-          {%- assign vt = p.variants | map: 'title' | join: ' ' -%}
-          {%- unless seen contains pid -%}
-            {%- if vt contains '120' or vt contains '160' or vt contains '180' or vt contains '260' or vt contains '278' or vt contains '280' or vt contains '300' or vt contains '320' -%}
-              {%- assign seen = seen | append: p.id | append: ',' -%}
-              <script type="application/json" data-tile-json>{%- render 'lc-cfg-tile-json', p: p, c: col.title -%}</script>
-            {%- endif -%}
-          {%- endunless -%}
-        {%- endfor -%}
-      {%- endif -%}
-    {%- endfor -%}
+    {%- comment -%} Fliesen werden im Browser aus dem Shop geladen (/collections/…/products.json), je Optik eine Kollektion {%- endcomment -%}
+    <script type="application/json" data-sources>[
+      {%- assign lines = s.sources | newline_to_br | split: '<br />' -%}
+      {%- assign first = true -%}
+      {%- for l in lines -%}
+        {%- assign parts = l | strip | split: '|' -%}
+        {%- if parts[0] != blank -%}
+          {%- unless first -%},{%- endunless -%}{%- assign first = false -%}
+          {"h":{{ parts[0] | strip | json }},"l":{{ parts[1] | default: parts[0] | strip | json }}}
+        {%- endif -%}
+      {%- endfor -%}
+    ]</script>
 
     <div class="lc-fr__rooms" role="tablist" aria-label="Bad wählen">
       {%- for block in section.blocks -%}
@@ -231,16 +226,11 @@
         if (this.started) return;
         this.started = true;
         this.tiles = [];
-        this.querySelectorAll('[data-tile-json]').forEach((el) => { try { this.tiles.push(JSON.parse(el.textContent)); } catch (e) {} });
-        // Nur Formate ab z. B. 60 × 120 cm (kurze / lange Seite) mit eigenem Fliesenbild der Variante
-        const minS = +this.dataset.minShort || 60, minL = +this.dataset.minLong || 120;
-        const real = (x) => typeof x === 'string' && x;
-        this.tiles = this.tiles.map((p) => {
-          p.vs = p.vs.filter((v) => { const z = size(v.t); v.img = real(v.tx) || (v.mt || []).find(real); v.z = z; return z && Math.min(...z) >= minS && Math.max(...z) >= minL && v.img; });
-          return p;
-        }).filter((p) => p.vs.length);
+        this.minS = +this.dataset.minShort || 0;
+        this.minL = +this.dataset.minLong || 0;
+        try { this.sources = JSON.parse(this.$('[data-sources]').textContent); } catch (e) { this.sources = []; }
+        this.loaded = {};
         try { this.cache = JSON.parse(localStorage.getItem(CACHE) || '{}'); } catch (e) { this.cache = {}; }
-        this.validate();
         this.rooms = [...this.querySelectorAll('[data-room]')].map((b) => {
           let geo = {};
           try { geo = JSON.parse(b.querySelector('[data-geo]').textContent); } catch (e) {}
@@ -249,7 +239,7 @@
         this.lays = {};
         this.choice = {}; // je Raum: { flächenId: { p, vid, dir } }
         this.grout = 'rgba(235,232,226,.9)';
-        this.optic = '';
+        this.optic = (this.sources[0] || {}).l || '';
         this.querySelectorAll('[data-room]').forEach((b) => b.addEventListener('click', () => this.setRoom(+b.dataset.room)));
         this.$('[data-surfaces]').addEventListener('click', (e) => { const b = e.target.closest('[data-s]'); if (b) this.setSurface(b.dataset.s); });
         this.$('[data-hit]').addEventListener('click', (e) => {
@@ -258,7 +248,7 @@
           const hit = this.surf.find((sf) => inside(pt, sf.vis));
           if (hit) this.setSurface(hit.id);
         });
-        this.$('[data-optics]').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { this.optic = b.dataset.v; this.renderTiles(); } });
+        this.$('[data-optics]').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { this.optic = b.dataset.v; this.loadOptic(); this.renderTiles(); } });
         this.$('[data-tiles]').addEventListener('click', (e) => {
           const b = e.target.closest('[data-id]');
           const p = b && this.tiles.find((t) => String(t.id) === b.dataset.id);
@@ -279,6 +269,7 @@
         this.$('[data-reset]').addEventListener('click', () => { this.choice[this.ri] = {}; this.update(); });
         new ResizeObserver(() => this.paint()).observe(this.$('[data-stage]'));
         this.renderOptics();
+        this.loadOptic();
         if (this.rooms.length) this.setRoom(0);
       }
       cur() { return (this.choice[this.ri] = this.choice[this.ri] || {}); }
@@ -289,9 +280,41 @@
         }
         return this.cache[v.img];
       }
+      // Alle Produkte einer Optik aus dem Shop laden (Storefront-JSON, 250 je Seite); Bilder über die Shop-Domain,
+      // damit die Bildprüfung die Pixel lesen darf. Produkte aus früheren Optiken werden nicht doppelt gezeigt.
+      async loadOptic() {
+        const src = this.sources.find((x) => x.l === this.optic);
+        if (!src || this.loaded[src.h]) return;
+        this.loaded[src.h] = 'busy';
+        const same = (u) => u && u.replace(/^(https?:)?\/\/cdn\.shopify\.com\/s\/files\/[\d/]+\/files\//, '/cdn/shop/files/');
+        const w = (u) => u && same(u) + (u.indexOf('?') > -1 ? '&' : '?') + 'width=1024';
+        const seen = new Set(this.tiles.map((t) => t.id)), list = [];
+        for (let page = 1; page < 20; page++) {
+          let data;
+          try { data = await (await fetch('/collections/' + src.h + '/products.json?limit=250&page=' + page)).json(); } catch (e) { break; }
+          const ps = (data && data.products) || [];
+          ps.forEach((p) => {
+            if (seen.has(p.id)) return;
+            seen.add(p.id);
+            const imgs = (p.images || []).filter((im) => !/anwendung/i.test(im.src));
+            const vs = (p.variants || []).map((v) => {
+              const own = (v.featured_image && v.featured_image.src) || (imgs.find((im) => (im.variant_ids || []).indexOf(v.id) > -1) || {}).src;
+              const img = own && !/anwendung/i.test(own) ? own : (imgs.find((im) => /farbe|textur/i.test(im.src)) || {}).src;
+              const z = size(v.title) || size(p.title) || [60, 60];
+              return { id: v.id, t: v.title, img: w(img), z, ok: v.available };
+            }).filter((v) => v.img && Math.min(...v.z) >= this.minS && Math.max(...v.z) >= this.minL);
+            if (vs.length) list.push({ id: p.id, c: src.l, t: p.title, u: '/products/' + p.handle, vs });
+          });
+          if (ps.length < 250) break;
+        }
+        this.tiles.push(...list);
+        this.loaded[src.h] = true;
+        this.renderTiles();
+        this.validate(list);
+      }
       // Je Produkt die erste Variante mit echter Fliesenoberfläche suchen (6 Bilder gleichzeitig); Liste wächst mit
-      async validate() {
-        const queue = this.tiles.slice();
+      async validate(items) {
+        const queue = items.slice();
         const work = async () => {
           for (let p; (p = queue.shift()); ) {
             for (const v of p.vs) if (await this.ok(v)) { p.good = v; break; }
@@ -410,14 +433,14 @@
         this.paint();
       }
       renderOptics() {
-        const cats = [...new Set(this.tiles.map((t) => t.c))];
-        this.$('[data-optics]').innerHTML = ['<button type="button" data-v="" class="is-on">Alle</button>'].concat(cats.map((c) => '<button type="button" data-v="' + esc(c) + '">' + esc(short(c)) + '</button>')).join('');
+        this.$('[data-optics]').innerHTML = this.sources.map((x) => '<button type="button" data-v="' + esc(x.l) + '">' + esc(x.l) + '</button>').join('');
       }
       renderTiles() {
         const c = this.cur()[this.active];
         this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.v === this.optic));
-        const all = this.tiles.filter((t) => !this.optic || t.c === this.optic), list = all.filter((t) => t.good);
-        const busy = all.some((t) => !t.done);
+        const all = this.tiles.filter((t) => t.c === this.optic), list = all.filter((t) => t.good);
+        const src = this.sources.find((x) => x.l === this.optic);
+        const busy = (src && this.loaded[src.h] !== true) || all.some((t) => !t.done);
         this.$('[data-tiles]').innerHTML = list.map((t) =>
           '<button type="button" class="lc-fr__tile-btn' + (c && c.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
           '<img src="' + esc(thumb(t.good.img)) + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('') +
@@ -496,15 +519,9 @@
     { "type": "text", "id": "title", "label": "Überschrift", "default": "Fliesen im Bad ausprobieren" },
     { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Bad wählen, Boden oder eine Wand im Bild anklicken und eine Fliese aus unserem Sortiment einsetzen. Jede Fläche einzeln." },
     { "type": "header", "content": "Fliesen zur Auswahl" },
-    { "type": "collection", "id": "col_1", "label": "Kollektion 1" },
-    { "type": "collection", "id": "col_2", "label": "Kollektion 2" },
-    { "type": "collection", "id": "col_3", "label": "Kollektion 3" },
-    { "type": "collection", "id": "col_4", "label": "Kollektion 4" },
-    { "type": "collection", "id": "col_5", "label": "Kollektion 5" },
-    { "type": "collection", "id": "col_6", "label": "Kollektion 6" },
-    { "type": "range", "id": "per_collection", "label": "Produkte je Kollektion", "min": 6, "max": 50, "step": 2, "default": 50 },
-    { "type": "range", "id": "min_short", "label": "Mindestformat: kurze Seite (cm)", "min": 30, "max": 160, "step": 10, "default": 60 },
-    { "type": "range", "id": "min_long", "label": "Mindestformat: lange Seite (cm)", "min": 60, "max": 320, "step": 10, "default": 120 },
+    { "type": "textarea", "id": "sources", "label": "Optiken: je Zeile Kollektion-Handle|Name", "info": "Reihenfolge = Reiter. Produkte, die schon in einem früheren Reiter vorkommen, erscheinen nicht doppelt.", "default": "fliesen-marmoroptik|Marmoroptik\nfliesen-steinoptik|Steinoptik\nfliesen-betonoptik|Betonoptik\nfliesen-holzoptik|Holzoptik\nfliesen-grossformat|Großformat\nmosaike|Mosaik\nfliesen|Weitere Fliesen" },
+    { "type": "range", "id": "min_short", "label": "Mindestformat: kurze Seite (cm), 0 = alle", "min": 0, "max": 160, "step": 10, "default": 0 },
+    { "type": "range", "id": "min_long", "label": "Mindestformat: lange Seite (cm), 0 = alle", "min": 0, "max": 320, "step": 10, "default": 0 },
     { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 48 },
     { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 56 }
   ],
