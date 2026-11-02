@@ -53,7 +53,7 @@
           endif
         -%}
         {%- if room -%}
-          <button type="button" class="lc-fr__room{% if forloop.first %} is-on{% endif %}" data-room="{{ forloop.index0 }}" {{ block.shopify_attributes }}
+          <button type="button" class="lc-fr__room{% if forloop.first %} is-on{% endif %}" data-room="{{ forloop.index0 }}" data-pid="{{ p.id }}" {{ block.shopify_attributes }}
             data-img="{{ room | image_url: width: 1800 }}" data-ratio="{{ room.aspect_ratio }}" data-name="{{ block.settings.name | default: p.title | escape }}">
             {{ room | image_url: width: 300 | image_tag: loading: 'lazy', alt: '' }}
             <span>{{ forloop.index | prepend: '0' | slice: -2, 2 }} · {{ block.settings.name | default: p.title }}</span>
@@ -234,7 +234,7 @@
         this.rooms = [...this.querySelectorAll('[data-room]')].map((b) => {
           let geo = {};
           try { geo = JSON.parse(b.querySelector('[data-geo]').textContent); } catch (e) {}
-          return { btn: b, img: b.dataset.img, ratio: +b.dataset.ratio || 1.5, name: b.dataset.name, geo };
+          return { btn: b, img: b.dataset.img, ratio: +b.dataset.ratio || 1.5, name: b.dataset.name, pid: b.dataset.pid, geo };
         });
         this.lays = {};
         this.choice = {}; // je Raum: { flächenId: { p, vid, dir } }
@@ -271,6 +271,40 @@
         this.renderOptics();
         this.loadOptic();
         if (this.rooms.length) this.setRoom(0);
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => this.linkRooms());
+        else this.linkRooms();
+      }
+      // Raumbilder weiter unten (Section „Räume“): vermessene Bilder öffnen hier im Visualizer
+      linkRooms() {
+        const byPid = {};
+        this.rooms.forEach((r, i) => { if (r.pid) byPid[r.pid] = i; });
+        document.querySelectorAll('.lc-rm__room[id]').forEach((fig) => {
+          const i = byPid[fig.id.split('-').pop()];
+          const box = fig.querySelector('.lc-rm__img');
+          if (i === undefined || !box || fig.dataset.frLinked) return;
+          fig.dataset.frLinked = '1';
+          const badge = document.createElement('span');
+          badge.textContent = 'Fliesen ändern';
+          badge.style.cssText = 'position:absolute;left:12px;top:12px;z-index:2;background:#111;color:#fff;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:8px 12px;pointer-events:none';
+          box.appendChild(badge);
+          box.style.cursor = 'pointer';
+          box.addEventListener('click', (e) => { if (e.target.closest('[data-card]')) return; e.preventDefault(); e.stopPropagation(); this.openRoom(i); }, true);
+          const cap = fig.querySelector('figcaption');
+          if (cap) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = 'Fliesen ändern ↑';
+            b.style.cssText = 'border:0;background:none;padding:0;font:inherit;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#111;cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px';
+            b.addEventListener('click', () => this.openRoom(i));
+            cap.insertBefore(b, cap.lastElementChild);
+            cap.style.gridTemplateColumns = 'auto minmax(0,1fr) auto auto';
+          }
+        });
+      }
+      openRoom(i) {
+        this.setRoom(i);
+        this.rooms[i].btn.scrollIntoView({ block: 'nearest', inline: 'center' });
+        this.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       cur() { return (this.choice[this.ri] = this.choice[this.ri] || {}); }
       async ok(v) {
