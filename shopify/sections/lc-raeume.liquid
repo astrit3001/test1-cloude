@@ -1,0 +1,257 @@
+{%- comment -%}
+  Räume im Stil der Hersteller-Kollektionsseiten: große Raumbilder mit Markierungen auf der Fliese,
+  Klick zeigt Fliese, Formate und Link. Darunter ein dunkles Band mit allen Farben.
+  Raumbild = Produktbild mit "anwendung" im Dateinamen (sonst Hauptbild),
+  Fliesenbild = Bild mit "farbe" im Dateinamen (sonst zweites Bild).
+  Position der Markierung: Metafeld custom.hotspot am Produkt als "x,y" in Prozent (z. B. "50,82"), sonst Boden Mitte.
+{%- endcomment -%}
+{%- liquid
+  assign s = section.settings
+-%}
+<section class="lc-rm" style="padding-top: {{ s.padding_top }}px; padding-bottom: {{ s.padding_bottom }}px;">
+  <lc-raeume class="lc-rm__app">
+    <div class="lc-rm__head">
+      <div class="lc-rm__title">
+        {%- if s.title != blank -%}<h2>{{ s.title }}</h2>{%- endif -%}
+        {%- if s.intro != blank -%}<p>{{ s.intro }}</p>{%- endif -%}
+      </div>
+      <nav class="lc-rm__tabs" aria-label="Rubriken">
+        {%- for block in section.blocks -%}
+          <button type="button" class="lc-rm__tab{% if forloop.first %} is-on{% endif %}" data-tab="{{ forloop.index0 }}" {{ block.shopify_attributes }}>{{ block.settings.label }}</button>
+        {%- endfor -%}
+      </nav>
+    </div>
+
+    {%- for block in section.blocks -%}
+      {%- assign col = block.settings.collection -%}
+      <div class="lc-rm__panel" data-panel="{{ forloop.index0 }}"{% unless forloop.first %} hidden{% endunless %}>
+        {%- if col != blank -%}
+          <div class="lc-rm__rooms">
+            {%- assign n = 0 -%}
+            {%- for p in col.products limit: block.settings.limit -%}
+              {%- liquid
+                assign room = nil
+                assign swatch = nil
+                for im in p.images
+                  if room == nil and im.src contains 'anwendung'
+                    assign room = im
+                  endif
+                  if swatch == nil and im.src contains 'farbe'
+                    assign swatch = im
+                  endif
+                endfor
+                if room == nil
+                  assign room = p.featured_image
+                endif
+                if swatch == nil and p.images.size > 1
+                  assign swatch = p.images[1]
+                endif
+                if swatch == nil
+                  assign swatch = room
+                endif
+                assign title = p.title | split: ' – Preis' | first | split: ' - Preis' | first | remove: ' – Marmoroptik' | remove: ' – Holzoptik' | remove: ' – Steinoptik' | remove: ' – Betonoptik' | remove: ' – Feinsteinzeugfliesen' | remove: ' – Wand- und Bodenfliesen'
+                assign formats = ''
+                for v in p.variants
+                  assign f = v.title | split: ' / ' | first
+                  if f contains 'cm' or f contains 'X' or f contains 'x'
+                    unless formats contains f
+                      assign formats = formats | append: f | append: ' · '
+                    endunless
+                  endif
+                endfor
+                assign formats = formats | remove_last: ' · '
+                assign hs = p.metafields.custom.hotspot.value | default: '50,82' | split: ','
+                assign hx = hs[0] | default: 50
+                assign hy = hs[1] | default: 82
+                assign mod = n | modulo: 3
+                assign n = n | plus: 1
+              -%}
+              {%- if room -%}
+                <figure class="lc-rm__room{% if mod == 0 %} is-wide{% endif %}" id="lc-rm-{{ section.id }}-{{ p.id }}">
+                  {{ room | image_url: width: 2000 | image_tag: loading: 'lazy', alt: title, sizes: '(max-width: 749px) 100vw, 50vw', widths: '600, 1000, 1500, 2000' }}
+                  <button type="button" class="lc-rm__dot" style="left: {{ hx }}%; top: {{ hy }}%;" aria-label="Fliese anzeigen: {{ title | escape }}"
+                    data-dot data-title="{{ title | escape }}" data-vendor="{{ p.vendor | escape }}" data-optic="{{ p.type | escape }}"
+                    data-formats="{{ formats | escape }}" data-colors="{{ p.variants.size }}" data-url="{{ p.url }}"
+                    data-swatch="{{ swatch | image_url: width: 400 }}"></button>
+                </figure>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+
+          <div class="lc-rm__band">
+            <div class="lc-rm__band-head">
+              <span>Farben &amp; Serien</span>
+              <span>{{ col.products_count }} Serien in {{ block.settings.label }}</span>
+            </div>
+            <div class="lc-rm__swatches">
+              {%- for p in col.products limit: block.settings.limit -%}
+                {%- liquid
+                  assign swatch = nil
+                  for im in p.images
+                    if swatch == nil and im.src contains 'farbe'
+                      assign swatch = im
+                    endif
+                  endfor
+                  if swatch == nil and p.images.size > 1
+                    assign swatch = p.images[1]
+                  endif
+                  if swatch == nil
+                    assign swatch = p.featured_image
+                  endif
+                  assign title = p.title | split: ' – Preis' | first | split: ' - Preis' | first | remove: ' – Marmoroptik' | remove: ' – Holzoptik' | remove: ' – Steinoptik' | remove: ' – Betonoptik' | remove: ' – Feinsteinzeugfliesen' | remove: ' – Wand- und Bodenfliesen'
+                -%}
+                {%- if swatch -%}
+                  <a class="lc-rm__swatch" href="{{ p.url }}" data-goto="lc-rm-{{ section.id }}-{{ p.id }}">
+                    <span class="lc-rm__swatch-img">{{ swatch | image_url: width: 500 | image_tag: loading: 'lazy', alt: title }}</span>
+                    <span class="lc-rm__swatch-name">{{ title }}</span>
+                  </a>
+                {%- endif -%}
+              {%- endfor -%}
+            </div>
+          </div>
+        {%- else -%}
+          <p class="lc-rm__empty">Bitte im Theme-Editor eine Kollektion für „{{ block.settings.label }}“ wählen.</p>
+        {%- endif -%}
+      </div>
+    {%- endfor -%}
+
+    <div class="lc-rm__card" data-card hidden role="dialog" aria-label="Fliese">
+      <button type="button" class="lc-rm__close" data-close aria-label="Schließen">×</button>
+      <img data-c-img alt="">
+      <div class="lc-rm__card-txt">
+        <span class="lc-rm__card-meta" data-c-meta></span>
+        <strong data-c-title></strong>
+        <span class="lc-rm__card-formats" data-c-formats></span>
+        <a class="lc-rm__card-link" data-c-url href="#">Zur Fliese <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+  </lc-raeume>
+</section>
+
+{% javascript %}
+  if (!customElements.get('lc-raeume')) {
+    customElements.define('lc-raeume', class extends HTMLElement {
+      connectedCallback() {
+        this.card = this.querySelector('[data-card]');
+        this.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+          this.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('is-on', x === b));
+          this.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== b.dataset.tab; });
+          this.close();
+        }));
+        this.addEventListener('click', (e) => {
+          const dot = e.target.closest('[data-dot]');
+          if (dot) { e.preventDefault(); this.open(dot); return; }
+          if (e.target.closest('[data-close]')) { this.close(); return; }
+          const sw = e.target.closest('[data-goto]');
+          const room = sw && document.getElementById(sw.dataset.goto);
+          if (room) {
+            e.preventDefault();
+            room.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => this.open(room.querySelector('[data-dot]')), 450);
+          }
+        });
+        document.addEventListener('click', (e) => { if (!this.card.hidden && !e.target.closest('[data-card], [data-dot], [data-goto]')) this.close(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.close(); });
+        window.addEventListener('resize', () => { if (this.dot) this.place(this.dot); });
+      }
+      open(dot) {
+        const d = dot.dataset, c = this.card;
+        if (this.dot) this.dot.classList.remove('is-on');
+        this.dot = dot;
+        dot.classList.add('is-on');
+        c.querySelector('[data-c-img]').src = d.swatch;
+        c.querySelector('[data-c-meta]').textContent = [d.vendor, d.optic].filter(Boolean).join(' · ');
+        c.querySelector('[data-c-title]').textContent = d.title;
+        c.querySelector('[data-c-formats]').textContent = (d.formats ? d.formats : '') + (+d.colors > 1 ? (d.formats ? ' — ' : '') + d.colors + ' Ausführungen' : '');
+        c.querySelector('[data-c-url]').href = d.url;
+        c.hidden = false;
+        this.place(dot);
+      }
+      // Karte neben der Markierung, innerhalb des Raumbilds; am Handy unten im Bild
+      place(dot) {
+        const fig = dot.closest('figure'), c = this.card;
+        fig.appendChild(c);
+        const fw = fig.clientWidth, fh = fig.clientHeight, x = dot.offsetLeft, y = dot.offsetTop, cw = c.offsetWidth, ch = c.offsetHeight;
+        if (fw < 560) { c.style.left = '12px'; c.style.top = Math.max(12, fh - ch - 12) + 'px'; return; }
+        const left = x + 22 + cw > fw - 12 ? x - 22 - cw : x + 22;
+        c.style.left = Math.max(12, left) + 'px';
+        c.style.top = Math.min(Math.max(12, y - ch / 2), fh - ch - 12) + 'px';
+      }
+      close() {
+        this.card.hidden = true;
+        if (this.dot) this.dot.classList.remove('is-on');
+        this.dot = null;
+      }
+    });
+  }
+{% endjavascript %}
+
+{% stylesheet %}
+  .lc-rm { background: #fafaf9; color: #111; }
+  .lc-rm__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px 40px; align-items: end; margin: 0 max(16px, 3vw); padding-bottom: 24px; border-bottom: 1px solid #111; }
+  @media (max-width: 749px) { .lc-rm__head { grid-template-columns: 1fr; } }
+  .lc-rm__title h2 { margin: 0; font-size: clamp(28px, 4vw, 44px); font-weight: 600; letter-spacing: -.01em; line-height: 1.05; }
+  .lc-rm__title p { margin: 10px 0 0; max-width: 560px; font-size: 14px; line-height: 1.55; color: #555; }
+  .lc-rm__tabs { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+  .lc-rm__tab { border: 0; background: none; padding: 6px 0; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #8a8a8a; cursor: pointer; border-bottom: 2px solid transparent; }
+  .lc-rm__tab:hover { color: #111; }
+  .lc-rm__tab.is-on { color: #111; border-bottom-color: #111; }
+  .lc-rm__tab:focus-visible, .lc-rm__dot:focus-visible, .lc-rm__swatch:focus-visible { outline: 2px solid #111; outline-offset: 3px; }
+  .lc-rm__panel { padding-top: 28px; }
+  .lc-rm__panel[hidden] { display: none; }
+  .lc-rm__rooms { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .lc-rm__room { position: relative; margin: 0; overflow: hidden; background: #e9e7e3; aspect-ratio: 4 / 3; }
+  .lc-rm__room.is-wide { grid-column: 1 / -1; aspect-ratio: 16 / 9; }
+  @media (max-width: 749px) { .lc-rm__rooms { grid-template-columns: 1fr; } .lc-rm__room, .lc-rm__room.is-wide { aspect-ratio: 4 / 3; } }
+  .lc-rm__room img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lc-rm__dot { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; padding: 0; border: 0; background: #111; cursor: pointer; box-shadow: 0 0 0 0 rgba(17,17,17,.35); animation: lc-rm-pulse 2.4s ease-out infinite; z-index: 1; }
+  .lc-rm__dot::after { content: ""; position: absolute; inset: 7px; background: #fff; }
+  .lc-rm__dot.is-on, .lc-rm__dot:hover { background: #fff; }
+  .lc-rm__dot.is-on::after, .lc-rm__dot:hover::after { background: #111; }
+  @keyframes lc-rm-pulse { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.7); } 70% { box-shadow: 0 0 0 12px rgba(255,255,255,0); } 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); } }
+  @media (prefers-reduced-motion: reduce) { .lc-rm__dot { animation: none; } }
+  .lc-rm__card { position: absolute; z-index: 3; width: 300px; max-width: calc(100% - 24px); display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 12px; background: #fff; color: #111; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+  .lc-rm__card[hidden] { display: none; }
+  .lc-rm__card img { width: 96px; height: 120px; object-fit: cover; display: block; background: #eee; }
+  .lc-rm__card-txt { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding-right: 14px; }
+  .lc-rm__card-meta { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #8a8a8a; }
+  .lc-rm__card strong { font-size: 15px; font-weight: 600; line-height: 1.25; }
+  .lc-rm__card-formats { font-size: 12px; line-height: 1.45; color: #555; }
+  .lc-rm__card-link { margin-top: auto; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #111; text-decoration: none; border-bottom: 1px solid #111; align-self: flex-start; padding-bottom: 2px; }
+  .lc-rm__close { position: absolute; top: 4px; right: 6px; border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: #111; padding: 4px; }
+  .lc-rm__band { background: #1b1b1b; color: #fff; padding: 36px max(16px, 3vw) 48px; }
+  .lc-rm__band-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; margin-bottom: 26px; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  .lc-rm__band-head span:last-child { color: #9a9a9a; }
+  .lc-rm__swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 34px 26px; }
+  @media (max-width: 749px) { .lc-rm__swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 14px; } }
+  .lc-rm__swatch { display: grid; gap: 10px; color: #fff; text-decoration: none; text-align: center; }
+  .lc-rm__swatch-img { display: block; aspect-ratio: 4 / 5; overflow: hidden; background: #2a2a2a; }
+  .lc-rm__swatch-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .6s ease; }
+  .lc-rm__swatch:hover .lc-rm__swatch-img img { transform: scale(1.05); }
+  .lc-rm__swatch-name { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; line-height: 1.35; }
+  .lc-rm__empty { padding: 40px max(16px, 3vw); color: #555; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "LC Räume",
+  "settings": [
+    { "type": "text", "id": "title", "label": "Überschrift", "default": "Räume" },
+    { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Fertige Räume mit unseren Fliesen. Auf die Markierung im Bild klicken, um zu sehen, welche Fliese verlegt ist." },
+    { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 40 },
+    { "type": "range", "id": "padding_bottom", "label": "Abstand unten", "min": 0, "max": 80, "step": 4, "default": 0 }
+  ],
+  "blocks": [
+    {
+      "type": "tab",
+      "name": "Rubrik",
+      "settings": [
+        { "type": "text", "id": "label", "label": "Name der Rubrik", "default": "Bäder" },
+        { "type": "collection", "id": "collection", "label": "Kollektion", "info": "Raumbild: Produktbild mit „anwendung“ im Dateinamen. Markierung: Metafeld custom.hotspot (z. B. 50,82)." },
+        { "type": "range", "id": "limit", "label": "Anzahl Räume", "min": 3, "max": 24, "step": 3, "default": 9 }
+      ]
+    }
+  ],
+  "presets": [{ "name": "LC Räume", "blocks": [{ "type": "tab", "settings": { "label": "Marmoroptik" } }, { "type": "tab", "settings": { "label": "Holzoptik" } }, { "type": "tab", "settings": { "label": "Steinoptik" } }] }]
+}
+{% endschema %}

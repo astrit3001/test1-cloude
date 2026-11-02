@@ -67,7 +67,8 @@
         "planner_url": "/",
         "padding_top": 32,
         "padding_bottom": 40
-      }
+      },
+      "disabled": true
     },
     "visualizer": {
       "type": "lc-visualizer",
@@ -85,10 +86,70 @@
         "per_collection": 24,
         "padding_top": 16,
         "padding_bottom": 48
+      },
+      "disabled": true
+    },
+    "raeume": {
+      "type": "lc-raeume",
+      "blocks": {
+        "marmor": {
+          "type": "tab",
+          "settings": {
+            "label": "Marmoroptik",
+            "collection": "fliesen-marmoroptik",
+            "limit": 9
+          }
+        },
+        "holz": {
+          "type": "tab",
+          "settings": {
+            "label": "Holzoptik",
+            "collection": "fliesen-holzoptik",
+            "limit": 9
+          }
+        },
+        "stein": {
+          "type": "tab",
+          "settings": {
+            "label": "Steinoptik",
+            "collection": "fliesen-steinoptik",
+            "limit": 9
+          }
+        },
+        "xxl": {
+          "type": "tab",
+          "settings": {
+            "label": "Großformat",
+            "collection": "fliesen-grossformat",
+            "limit": 9
+          }
+        },
+        "outdoor": {
+          "type": "tab",
+          "settings": {
+            "label": "Outdoor",
+            "collection": "terrassenplatten-2-cm-20-mm-outdoor-feinsteinzeug",
+            "limit": 9
+          }
+        }
+      },
+      "block_order": [
+        "marmor",
+        "holz",
+        "stein",
+        "xxl",
+        "outdoor"
+      ],
+      "settings": {
+        "title": "Räume",
+        "intro": "Fertige Räume mit unseren Fliesen. Auf die Markierung im Bild klicken, um zu sehen, welche Fliese verlegt ist.",
+        "padding_top": 40,
+        "padding_bottom": 0
       }
     }
   },
   "order": [
+    "raeume",
     "inspiration",
     "visualizer"
   ]
