@@ -18,7 +18,7 @@ Ziel: mehr Follower **und** mehr Anfragen (Showroom-Termin, WhatsApp, Konfigurat
 | Säule | Format | Wie oft | Zweck |
 |---|---|---|---|
 | Baustellen-Reels | Reel 9:16 (Skill `reel-vorher-nachher`) | so oft Material kommt, Ziel 3–5/Woche | **Reichweite / neue Follower** |
-| Flyer (Tages-Dreierset) | Bild 1 Feed + Bild 2 Story | 1/Tag nach Freigabe | Angebot, Wiedererkennung |
+| Flyer (Tagesset) | Karussell (Bild 1–3) + Flyer als Story | 1/Tag nach Freigabe | Angebot, Wiedererkennung |
 | LunaCeram | Reel/Karussell/Story mit Fliese, Showroom, Konfigurator | 1–2/Woche | **Anfragen** |
 
 Einschätzung, die dem Nutzer offen gesagt wird: Reels bringen auf Instagram in der Regel deutlich mehr Reichweite bei Nicht-Followern als Einzelbilder (*vermutlich*, von Instagram selbst so kommuniziert, aber nicht für dieses Konto gemessen). Täglich nur Werbe-Flyer wirkt schnell wie Anzeige und kann Follower kosten (*vermutlich*). Deshalb: Flyer dürfen nie die einzige Säule sein. Nach 4 Wochen mit echten Zahlen neu entscheiden.
@@ -38,9 +38,13 @@ Einschätzung, die dem Nutzer offen gesagt wird: Reels bringen auf Instagram in 
 ## Flyer: Tages-Dreierset (läuft schon als geplanter Task)
 
 - Geplanter Task **„Unik Fliesen Tages-Dreierset“** (`trig_01WuVZXrKuZukXbPpExw2i5m`), täglich 5:38 Uhr deutsche Zeit. Er erzeugt mit Higgsfield drei Bilder derselben Fliese:
-  - Bild 1: Lifestyle 4:5 → **Feed**
-  - Bild 2: Unik-Flyer 9:16 schwarz/gold → **Story**
-  - Bild 3: neutraler Flyer → nur Shopify (erstes Produktbild), nie Instagram
+  - Seit 03.11.2026 **vier Bilder, alle 4:5, nur EIN Flyer** (Nutzer: „einer zu viel“):
+  - Bild 1: Lifestyle → Karussell Folie 1
+  - Bild 2: Unik-Flyer schwarz/gold 4:5 → Karussell Folie 2 **und** Story
+  - Bild 3: Nahaufnahme Oberfläche → Karussell Folie 3
+  - Bild 4: neutraler Flyer → nur Shopify (erstes Produktbild), nie Instagram
+  - Bild 1 Pflicht: genau zwei Hände (Pose beider Hände im Prompt festlegen), Fliese ≥ 40 % des Bildes frei sichtbar, Gesicht/Bart nach den neuesten Fotos (Higgsfield 39a45852…, f528b15c…), Bart im Farbton der Haare.
+  - Bildunterschrift: erste Zeile Stimmung, dann ✔️-Fakten, Frage zu den Farben, CTA.
 - Seit 03.11.2026 (Schritt 5 im Task) schreibt der Task auch die Bildunterschrift und wartet auf „posten“ in **seiner** Sitzung. Ohne Freigabe wird nichts gepostet (so vom Nutzer gewünscht).
 - Den Ablauf nur über `update_trigger` (Prompt) ändern, **nicht löschen und neu anlegen**: Neu angelegte Tasks bekommen hier keine Verbindungen (Higgsfield, Shopify), das wurde am 03.11. getestet (*sicher*).
 - Blotato ist im Task **nicht** verbunden (Stand 03.11.). Ist es noch nicht ergänzt, kommt die Freigabe hierher: Ergebnis-Links aus dem Bericht nehmen, Feed + Story wie unten posten.
