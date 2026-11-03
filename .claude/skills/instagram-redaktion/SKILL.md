@@ -110,6 +110,7 @@ Vom Nutzer genannt am 03.11.2026. Instagram selbst ist von hier nicht abrufbar (
 **Video (seit 03.11.2026):** Zweimal pro Woche ein 6-s-Video als Karussell-Folie 2 (Reihenfolge Bild 1, Video, Flyer, Nahaufnahme):
 - **Dienstag – „Moodboard → Raum“** (Format von @senay_florim/@eera_bagno): Astrits Hand mit schwarzer Apple Watch legt die Muster (Startbild mit Hand, Hautton nach Astrit-Foto), Ende in einem Badezimmer – jedes Mal ein anderer Bad-Typ und Stil. Higgsfield `flux_3_video`, 3:4, 720p, Start-/Endbild + Moodboard als Referenz (ca. 36 Credits + 3 Bilder).
 - **Freitag – „Farbwechsel – welche nehmt ihr?“**: derselbe Raum wechselt von Farbe A zu Farbe B der Serie; `minimax_h3_max`, 3:4, 768p, nur Start-/Endbild (MiniMax erlaubt keine Referenz zusammen mit Start/Ende; ca. 15 Credits + 2 Bilder). Zweite Zeile der Bildunterschrift: „[Farbe A] oder [Farbe B] – welche würdet ihr nehmen? 👇“.
+- Astrit-Fotos 39a45852 und f528b15c (03.11.2026) sind bei Higgsfield defekt (400 „Eingabebild konnte nicht gelesen werden“, Upload unvollständig, URL liefert 403) – weglassen, bis Astrit sie neu hochlädt; Ersatz b7918426 ff.
 - Beide Videos klein beschriftet: 'UNIK FLIESEN' oben links, 'LUNACERAM.COM' oben rechts (in Start- und Endbild eingebaut; KI-Videos können Schrift verformen – prüfen).
 - Gemischtes Karussell (Bild + Video) über Blotato noch ungetestet; bei Fehler Video separat als Reel anbieten.
 
