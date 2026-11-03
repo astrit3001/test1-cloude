@@ -18,7 +18,7 @@ Ziel: mehr Follower **und** mehr Anfragen (Showroom-Termin, WhatsApp, Konfigurat
 | Säule | Format | Wie oft | Zweck |
 |---|---|---|---|
 | Baustellen-Reels | Reel 9:16 (Skill `reel-vorher-nachher`) | so oft Material kommt, Ziel 3–5/Woche | **Reichweite / neue Follower** |
-| Flyer | Bild-Post (oder Karussell) | 1/Tag aus dem aktuellen Dreierset | Angebot, Wiedererkennung |
+| Flyer (Tages-Dreierset) | Bild 1 Feed + Bild 2 Story | 1/Tag nach Freigabe | Angebot, Wiedererkennung |
 | LunaCeram | Reel/Karussell/Story mit Fliese, Showroom, Konfigurator | 1–2/Woche | **Anfragen** |
 
 Einschätzung, die dem Nutzer offen gesagt wird: Reels bringen auf Instagram in der Regel deutlich mehr Reichweite bei Nicht-Followern als Einzelbilder (*vermutlich*, von Instagram selbst so kommuniziert, aber nicht für dieses Konto gemessen). Täglich nur Werbe-Flyer wirkt schnell wie Anzeige und kann Follower kosten (*vermutlich*). Deshalb: Flyer dürfen nie die einzige Säule sein. Nach 4 Wochen mit echten Zahlen neu entscheiden.
@@ -35,12 +35,17 @@ Einschätzung, die dem Nutzer offen gesagt wird: Reels bringen auf Instagram in 
 
 „Automatisch jeden Tag“ heißt hier: **die ganze Woche im Voraus in Blotato einplanen**. Blotato veröffentlicht dann selbst, auch wenn diese Sitzung geschlossen ist (*sicher*, so funktioniert `scheduledTime`). Einen wiederkehrenden geplanten Task nur anlegen, wenn der Nutzer das ausdrücklich will.
 
-## Flyer-Dreierset
+## Flyer: Tages-Dreierset (läuft schon als geplanter Task)
 
-- Ein Set = 3 Flyer, pro Tag einer → ein Set reicht für 3 Tage. Rechtzeitig (Tag 2) nach dem nächsten Set fragen.
-- Vor dem Posten jeden Flyer ansehen (Read): Rechtschreibung, Telefonnummer/Website korrekt, Text nicht am Rand abgeschnitten, Format 4:5 (1080×1350) bevorzugt, 1:1 geht. 9:16-Flyer sind für Stories, im Feed werden sie beschnitten (*sicher*).
-- Fehler auf dem Flyer zuerst melden, nicht posten.
-- Die Bildunterschrift erzählt etwas zum Flyer (Nutzen für den Kunden), nicht nur „Jetzt anfragen“.
+- Geplanter Task **„Unik Fliesen Tages-Dreierset“** (`trig_01WuVZXrKuZukXbPpExw2i5m`), täglich 5:38 Uhr deutsche Zeit. Er erzeugt mit Higgsfield drei Bilder derselben Fliese:
+  - Bild 1: Lifestyle 4:5 → **Feed**
+  - Bild 2: Unik-Flyer 9:16 schwarz/gold → **Story**
+  - Bild 3: neutraler Flyer → nur Shopify (erstes Produktbild), nie Instagram
+- Seit 03.11.2026 (Schritt 5 im Task) schreibt der Task auch die Bildunterschrift und wartet auf „posten“ in **seiner** Sitzung. Ohne Freigabe wird nichts gepostet (so vom Nutzer gewünscht).
+- Den Ablauf nur über `update_trigger` (Prompt) ändern, **nicht löschen und neu anlegen**: Neu angelegte Tasks bekommen hier keine Verbindungen (Higgsfield, Shopify), das wurde am 03.11. getestet (*sicher*).
+- Blotato ist im Task **nicht** verbunden (Stand 03.11.). Ist es noch nicht ergänzt, kommt die Freigabe hierher: Ergebnis-Links aus dem Bericht nehmen, Feed + Story wie unten posten.
+- Die Bilder sind KI-generiert und werden vom Task nicht angesehen. Hinweis an den Nutzer: vor „posten“ die Links öffnen (Gesicht, Schrift, Telefonnummer).
+- Bildunterschrift: nur belegte Angaben aus dem Task-Bericht (Farben, Formate), keine Preise, genau 5 Hashtags mit #fliesenrheine.
 
 ## Reels
 
@@ -87,7 +92,7 @@ Ablauf über die vorhandenen Skills: `reel-material-check` → `reel-vorher-nach
 
 ## Freigaben (vom Nutzer erteilt)
 
-- *(noch keine – jeder Plan braucht eine Freigabe)*
+- Tages-Dreierset: jeden Tag einzeln mit „posten“ freigeben (03.11.2026). Nie selbst einplanen.
 
 ## Grenzen (immer ehrlich sagen)
 
