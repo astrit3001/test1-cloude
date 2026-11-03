@@ -119,7 +119,9 @@
     const clean = (t) => String(t).replace(/\s*[–-]\s*Preis.*$/i, '').replace(/\s*[–-]\s*(Marmoroptik|Holzoptik|Steinoptik|Betonoptik|Feinsteinzeugfliesen|Wand- und Bodenfliesen)\s*$/i, '');
     const short = (c) => String(c).split(' – ')[0].replace(/^Fliesen in /, '').replace('Beton- & Zementoptik', 'Betonoptik');
     const NAMES = { back: 'Rückwand', left: 'Wand links', right: 'Wand rechts', floor: 'Boden' };
-    const PX = 2; // Pixel je cm auf der ungedrehten Fläche
+    // Pixel je cm auf der ungedrehten Fläche: so viele, dass die Fliese nach der Perspektive nicht hochskaliert wird
+    // (Bühnenbreite × Pixeldichte, Retina scharf), in halben Schritten, 2 bis 6
+    const pxPerCm = (W) => Math.min(6, Math.max(2, Math.round(((W * (window.devicePixelRatio || 1)) / 300) * 2) / 2));
     // Einheitsquadrat -> Viereck (Projektivabbildung), als CSS matrix3d für ein Element der Größe w×h
     const matrix3d = (w, h, q) => {
       const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
@@ -187,7 +189,7 @@
             let seed = 0;
             for (let i = 0; i < url.length; i++) seed = (seed * 31 + url.charCodeAt(i)) >>> 0;
             const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-            const N = 4, k = 240 / Math.max(tw, th), cw = Math.round(tw * k), ch = Math.round(th * k);
+            const N = 4, k = Math.min(1024, Math.max(tw, th)) / Math.max(tw, th), cw = Math.round(tw * k), ch = Math.round(th * k);
             const cv = document.createElement('canvas'); cv.width = cw * N; cv.height = ch * N;
             const ctx = cv.getContext('2d');
             const iw = img.naturalWidth, ih = img.naturalHeight;
@@ -213,7 +215,7 @@
               } else ctx.drawImage(img, ox, oy, sw, sh, -cw / 2, -ch / 2, cw, ch);
               ctx.restore();
             }
-            cv.toBlob((b) => res(b ? URL.createObjectURL(b) : url), 'image/jpeg', 0.9);
+            cv.toBlob((b) => res(b ? URL.createObjectURL(b) : url), 'image/jpeg', 0.92);
           } catch (e) { res(url); }
         };
         img.onerror = () => res(url);
@@ -340,7 +342,7 @@
         if (!src || this.loaded[src.h]) return;
         this.loaded[src.h] = 'busy';
         const same = (u) => u && u.replace(/^(https?:)?\/\/cdn\.shopify\.com\/s\/files\/[\d/]+\/files\//, '/cdn/shop/files/');
-        const w = (u) => u && same(u) + (u.indexOf('?') > -1 ? '&' : '?') + 'width=1024';
+        const w = (u) => u && same(u) + (u.indexOf('?') > -1 ? '&' : '?') + 'width=1600';
         const list = [];
         for (let page = 1; page < 20; page++) {
           let data;
@@ -455,7 +457,7 @@
         if (!this.surf) return;
         const st = this.$('[data-stage]'), W = st.clientWidth, H = st.clientHeight;
         if (!W || !H) return;
-        const choice = this.cur();
+        const choice = this.cur(), PX = pxPerCm(W);
         this.surf.forEach((sf) => {
           const box = this.querySelector('[data-sf="' + sf.id + '"]');
           const c = choice[sf.id];
