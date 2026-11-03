@@ -90,6 +90,19 @@ Ablauf über die vorhandenen Skills: `reel-material-check` → `reel-vorher-nach
 - Kommentare und DMs können über Blotato gelesen/beantwortet werden. Antworten nur nach Freigabe des Nutzers senden – sie gehen öffentlich bzw. an echte Kunden.
 - Täglich 10–15 Minuten selbst auf Kommentare antworten und lokale Konten (Rheine, Münsterland, Bauträger, Architekten) kommentieren bringt Reichweite, die kein Planungstool ersetzt (*vermutlich*).
 
+## Vorbild-Konten (Montags-Inspiration im Tagestask, Schritt 6)
+
+Vom Nutzer genannt am 03.11.2026. Instagram selbst ist von hier nicht abrufbar (Firecrawl lehnt ab, Container blockiert, influencers-club lieferte 502). Ausgewertet werden nur Suchtreffer-Texte (Bildunterschrift, Datum, Likes) – keine Bilder.
+
+| Gruppe | Konten |
+|---|---|
+| Händler Kosovo/Albanien | @dinoqeramika, @albaqeramika, @divaqeramika, @billa.albania |
+| Händler Deutschland | @afloor_design (wichtigstes Vorbild DE), @fliesenpark.de, @aura_fliesen (am nächsten am eigenen Stil) |
+| Fliesenleger (für Reels) | @dmitry__katkov (Nutzer schrieb „dimitry__katkov“), @ardi_qeramike |
+| Hersteller (nicht geprüft) | @argentaceramica, @pamesaceramica, @mirage_it, @lafaenzaceramica |
+
+Regeln: Ideen und Machart übernehmen, nie Texte/Bilder/Layouts kopieren; keine politischen Anspielungen; Likes im Verhältnis zu Followern bewerten. Neue Konten: per Suche prüfen, dann den Task-Prompt per `update_trigger` ändern (nicht neu anlegen).
+
 ## Freigaben (vom Nutzer erteilt)
 
 - **Grundregel (03.11.2026, ausdrücklich vom Nutzer): Niemals selbst posten.** Jeder Post, jede Story, jeder Kommentar und jede DM erst nach ausdrücklicher Freigabe des Nutzers für genau diesen Inhalt („posten“, „ok“, „freigegeben“). Kein Einplanen auf Vorrat, kein „läuft automatisch, wenn du nicht widersprichst“.
