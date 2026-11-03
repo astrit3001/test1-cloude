@@ -36,6 +36,8 @@
       {%- endfor -%}
     ]</script>
 
+    {%- render 'lc-fr-objekte' -%}
+
     <div class="lc-fr__rooms" role="tablist" aria-label="Bad wählen">
       {%- for block in section.blocks -%}
         {%- liquid
@@ -68,6 +70,7 @@
         <div class="lc-fr__stage" data-stage>
           <img class="lc-fr__photo" data-photo alt="">
           <div class="lc-fr__layers" data-layers></div>
+          <div class="lc-fr__objs" data-objs></div>
           <div class="lc-fr__occ" data-occ></div>
           <svg class="lc-fr__hit" data-hit preserveAspectRatio="none" viewBox="0 0 100 100" aria-hidden="true"></svg>
           <span class="lc-fr__hint" data-hint>Fläche im Bild anklicken</span>
@@ -127,6 +130,14 @@
             </div>
           </div>
         </div>
+        <div class="lc-fr__group" data-objgroup hidden>
+          <span class="lc-fr__label">3 · Spiegel <em>im Bild tauschen</em></span>
+          <div class="lc-fr__objlist" data-objlist></div>
+          <div class="lc-fr__row">
+            <label class="lc-fr__field">Größe<select data-objsize></select></label>
+          </div>
+          <p class="lc-fr__note" data-objnote hidden></p>
+        </div>
         <div class="lc-fr__group">
           <span class="lc-fr__label">Ihre Auswahl</span>
           <ul class="lc-fr__sum" data-sum><li class="lc-fr__empty">Noch keine Fliese gewählt.</li></ul>
@@ -154,6 +165,23 @@
       const g = (dx3 * dy2 - dx2 * dy3) / den, hh = (dx1 * dy3 - dx3 * dy1) / den;
       const a = x1 - x0 + g * x1, b = x3 - x0 + hh * x3, d = y1 - y0 + g * y1, e = y3 - y0 + hh * y3;
       return 'matrix3d(' + [a / w, d / w, 0, g / w, b / h, e / h, 0, hh / h, 0, 0, 1, 0, x0, y0, 0, 1].map((v) => +v.toFixed(8)).join(',') + ')';
+    };
+    // Einheitsquadrat <-> Viereck: Punkt auf einer Fläche in Bildkoordinaten umrechnen und zurück
+    const homog = (q) => {
+      const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+      const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+      const den = dx1 * dy2 - dx2 * dy1, g = (dx3 * dy2 - dx2 * dy3) / den, h = (dx1 * dy3 - dx3 * dy1) / den;
+      const a = x1 - x0 + g * x1, b = x3 - x0 + h * x3, d = y1 - y0 + g * y1, e = y3 - y0 + h * y3;
+      const i = [[e - y0 * h, x0 * h - b, b * y0 - x0 * e], [y0 * g - d, a - x0 * g, x0 * d - a * y0], [d * h - e * g, b * g - a * h, a * e - b * d]];
+      return {
+        fwd: (u, v) => { const w = g * u + h * v + 1; return [(a * u + b * v + x0) / w, (d * u + e * v + y0) / w]; },
+        bwd: (x, y) => { const w = i[2][0] * x + i[2][1] * y + i[2][2]; return [(i[0][0] * x + i[0][1] * y + i[0][2]) / w, (i[1][0] * x + i[1][1] * y + i[1][2]) / w]; },
+      };
+    };
+    // Ausschnitt eines freigestellten Bildes als Hintergrund (crop in %)
+    const cropBg = (o) => {
+      const [x0, y0, x1, y1] = o.crop, cw = x1 - x0, ch = y1 - y0;
+      return 'background-image:url(\'' + o.img + '\');background-repeat:no-repeat;background-size:' + (10000 / cw).toFixed(2) + '% ' + (10000 / ch).toFixed(2) + '%;background-position:' + (cw < 100 ? (x0 / (100 - cw)) * 100 : 0).toFixed(2) + '% ' + (ch < 100 ? (y0 / (100 - ch)) * 100 : 0).toFixed(2) + '%';
     };
     const ellipse = ([cx, cy, rx, ry]) => Array.from({ length: 24 }, (_, i) => [cx + rx * Math.cos((i / 24) * 2 * Math.PI), cy + ry * Math.sin((i / 24) * 2 * Math.PI)]);
     const poly = (pts) => 'polygon(' + pts.map(([x, y]) => x.toFixed(2) + '% ' + y.toFixed(2) + '%').join(',') + ')';
@@ -272,6 +300,16 @@
         this.grout = 'rgba(235,232,226,.9)';
         this.optic = (this.sources[0] || {}).l || '';
         this.vendor = '';
+        try { this.objects = JSON.parse(this.$('[data-objects]').textContent); } catch (e) { this.objects = {}; }
+        this.objChoice = {}; // je Raum: { Platz-Nr: { m: Spiegel-Nr, s: Größen-Nr } }
+        this.$('[data-objlist]').addEventListener('click', (e) => {
+          const b = e.target.closest('[data-m]'); if (!b) return;
+          const slot = this.slots()[0]; if (!slot) return;
+          const oc = this.curObj();
+          if (b.dataset.m === '') delete oc[0]; else oc[0] = { m: +b.dataset.m, s: 0 };
+          this.ensureWall(slot).then(() => this.update());
+        });
+        this.$('[data-objsize]').addEventListener('change', (e) => { const c = this.curObj()[0]; if (c) { c.s = +e.target.value; this.update(); } });
         // Hersteller-Filter: wirkt zusammen mit Reiter und Suche
         const vbox = this.$('[data-vendors]');
         if (vbox) vbox.addEventListener('click', (e) => {
@@ -323,7 +361,7 @@
           this.$('[data-grout]').querySelectorAll('button').forEach((x) => x.classList.toggle('is-on', x === b));
           this.paint();
         });
-        this.$('[data-reset]').addEventListener('click', () => { this.choice[this.ri] = {}; this.update(); });
+        this.$('[data-reset]').addEventListener('click', () => { this.choice[this.ri] = {}; this.objChoice[this.ri] = {}; this.$('[data-objnote]').hidden = true; this.update(); });
         new ResizeObserver(() => this.paint()).observe(this.$('[data-stage]'));
         this.renderOptics();
         this.loadOptic();
@@ -472,15 +510,69 @@
         this.$('[data-photo]').src = r.img;
         this.$('[data-roomname]').textContent = String(i + 1).padStart(2, '0') + ' · ' + r.name;
         this.surf = this.build(r.geo, r.ratio);
-        this.occ = (r.geo.occ || []).map((o) => (o.e ? ellipse(o.e) : o));
+        this.occAll = (r.geo.occ || []).map((o) => (o.e ? ellipse(o.e) : o));
+        this.occ = this.occAll;
         // Fotoschatten: unscharfe Graustufen-Kopie des Fotos je Fläche; Möbel: Foto-Ausschnitte obenauf
         this.$('[data-layers]').innerHTML = this.surf.map((sf) =>
           '<div class="lc-fr__surf" data-sf="' + sf.id + '" style="clip-path:' + poly(sf.clip) + '"><div class="lc-fr__tile"></div>' +
           '<img class="lc-fr__shade" src="' + esc(r.img) + '" alt="" style="opacity:' + sf.shade + '"></div>').join('');
-        this.$('[data-occ]').innerHTML = this.occ.map((o) => '<img src="' + esc(r.img) + '" alt="" style="clip-path:' + poly(o) + '">').join('');
+        this.renderOcc();
+        this.renderObjList();
         this.$('[data-hit]').innerHTML = this.surf.map((sf) => '<polygon data-hp="' + sf.id + '" points="' + sf.vis.map((p) => p.join(',')).join(' ') + '"/>').join('');
         this.$('[data-surfaces]').innerHTML = this.surf.map((sf) => '<button type="button" data-s="' + sf.id + '">' + esc(sf.name) + '<small></small></button>').join('');
         this.setSurface(this.surf.find((s) => s.id === 'floor') ? 'floor' : this.surf[0].id);
+      }
+      // Objektplätze des Raums (zuerst nur Spiegel), gewählte Objekte je Raum
+      slots() { return ((this.rooms[this.ri] || {}).geo || {}).objects || []; }
+      curObj() { return (this.objChoice[this.ri] = this.objChoice[this.ri] || {}); }
+      // Möbel und Gegenstände aus dem Foto obenauf; ein getauschter Spiegel blendet den alten aus
+      renderOcc() {
+        const r = this.rooms[this.ri], oc = this.curObj(), drop = new Set();
+        this.slots().forEach((sl, i) => { if (oc[i]) drop.add(sl.occ); });
+        this.occ = this.occAll.filter((o, i) => !drop.has(i));
+        this.$('[data-occ]').innerHTML = this.occ.map((o) => '<img src="' + esc(r.img) + '" alt="" style="clip-path:' + poly(o) + '">').join('');
+      }
+      renderObjList() {
+        const slot = this.slots()[0], list = this.objects.spiegel || [], g = this.$('[data-objgroup]');
+        g.hidden = !slot || !list.length;
+        if (g.hidden) return;
+        const c = this.curObj()[0];
+        this.$('[data-objlist]').innerHTML = '<button type="button" data-m="" class="lc-fr__obj' + (c ? '' : ' is-on') + '"><span class="lc-fr__obj-img lc-fr__obj-orig">Original</span><span>Original im Foto</span></button>' +
+          list.map((o, i) => '<button type="button" data-m="' + i + '" class="lc-fr__obj' + (c && c.m === i ? ' is-on' : '') + '" title="' + esc(o.t) + '"><span class="lc-fr__obj-img"><i style="' + cropBg(o) + ';aspect-ratio:' + o.ar + (o.ar >= 1 ? ';width:80%' : ';height:86%') + '"></i></span><span>' + esc(o.t.split(' – ')[0]) + '</span></button>').join('');
+        const o = c && list[c.m], sel = this.$('[data-objsize]');
+        sel.innerHTML = o ? o.sizes.map((z, i) => '<option value="' + i + '"' + (i === c.s ? ' selected' : '') + '>' + esc(z[0]) + '</option>').join('') : '';
+        sel.disabled = !o || o.sizes.length < 2;
+      }
+      // Damit der alte Spiegel verschwindet, braucht die Wand dahinter eine Fliese: ist keine gewählt,
+      // kommt die Fliese aus dem Foto (das Produkt des Raumbilds) auf die Wand
+      async ensureWall(slot) {
+        const note = this.$('[data-objnote]');
+        note.hidden = true;
+        if (!this.curObj()[0] || this.cur()[slot.surf]) return;
+        const r = this.rooms[this.ri], all = this.sources[this.sources.length - 1];
+        if (all) await this.loadOptic(all);
+        while (all && this.loaded[all.h] !== true) await new Promise((res) => setTimeout(res, 150));
+        const t = this.byId[r.pid];
+        if (t && !t.done) { for (const v of t.vs) if (await this.ok(v)) { t.good = v; break; } t.done = true; }
+        if (t && t.good) {
+          this.cur()[slot.surf] = { p: t, vid: t.good.id, dir: 'v' };
+          note.textContent = 'Damit der alte Spiegel verschwindet, liegt auf der Wand jetzt „' + clean(t.t) + '“ – unter „1 · Fläche“ beliebig änderbar.';
+        } else note.textContent = 'Bitte für die Wand hinter dem Spiegel eine Fliese wählen, sonst bleibt der alte Spiegel sichtbar.';
+        note.hidden = false;
+      }
+      // Neuer Spiegel perspektivisch auf der Wand, echte Größe in cm, Mitte wie beim alten Spiegel
+      paintObjects(W, H) {
+        const box = this.$('[data-objs]'), oc = this.curObj(), list = this.objects.spiegel || [];
+        box.innerHTML = this.slots().map((sl, i) => {
+          const c = oc[i], o = c && list[c.m], sf = o && this.surf.find((x) => x.id === sl.surf);
+          if (!sf) return '';
+          const z = o.sizes[c.s] || o.sizes[0], P = (p) => [(p[0] / 100) * W, (p[1] / 100) * H];
+          const hm = homog(sf.quad.map(P)), [u, v] = hm.bwd(...P(sl.at));
+          const du = z[1] / 100 / sf.size[0] / 2, dv = z[2] / 100 / sf.size[1] / 2;
+          const q = [[u - du, v - dv], [u + du, v - dv], [u + du, v + dv], [u - du, v + dv]].map(([a, b]) => hm.fwd(a, b));
+          const ew = 400, eh = Math.round((400 * z[2]) / z[1]);
+          return '<div class="lc-fr__obj-on" style="width:' + ew + 'px;height:' + eh + 'px;' + cropBg(o) + ';background-size:' + (10000 / (o.crop[2] - o.crop[0])).toFixed(2) + '% ' + (10000 / (o.crop[3] - o.crop[1])).toFixed(2) + '%;transform:' + matrix3d(ew, eh, q) + ';filter:drop-shadow(0 6px 10px rgba(0,0,0,.28)) brightness(' + (o.tone || 1) + ')"></div>';
+        }).join('');
       }
       setSurface(id) {
         this.active = id;
@@ -521,7 +613,12 @@
           // Fliesen von der unteren Kante (Boden: hintere Kante) aus verlegt, Fuge mittig
           t.style.backgroundPosition = 'center ' + (sf.id === 'floor' ? 'top' : 'bottom');
           t.style.transform = matrix3d(w, h, sf.quad.map(([x, y]) => [(x / 100) * W, (y / 100) * H]));
+          // Fotoschatten des alten Spiegels nicht auf die neue Fliese übertragen
+          const sh = box.querySelector('.lc-fr__shade'), hole = this.slots().find((sl, i) => sl.surf === sf.id && this.curObj()[i]);
+          const m = hole ? 'radial-gradient(' + hole.hole[2] + '% ' + hole.hole[3] + '% at ' + hole.hole[0] + '% ' + hole.hole[1] + '%, transparent 78%, #000 100%)' : '';
+          sh.style.webkitMaskImage = m; sh.style.maskImage = m;
         });
+        this.paintObjects(W, H);
       }
       update() {
         const choice = this.cur(), c = choice[this.active];
@@ -536,11 +633,14 @@
         this.$('[data-dir]').value = c ? c.dir : 'h';
         this.$('[data-dir]').disabled = !c;
         this.renderTiles();
-        const rows = this.surf.filter((sf) => choice[sf.id]);
-        this.$('[data-sum]').innerHTML = rows.length ? rows.map((sf) => {
+        this.renderOcc();
+        this.renderObjList();
+        const rows = this.surf.filter((sf) => choice[sf.id]), oc = this.curObj(), ol = this.objects.spiegel || [];
+        const objRows = this.slots().map((sl, i) => { const c = oc[i], o = c && ol[c.m]; return o ? '<li><span>Spiegel</span><a href="/products/' + esc(o.h) + '">' + esc(o.t) + ' – ' + esc((o.sizes[c.s] || o.sizes[0])[0]) + '</a></li>' : ''; }).join('');
+        this.$('[data-sum]').innerHTML = rows.length || objRows ? rows.map((sf) => {
           const x = choice[sf.id], v = this.variant(x);
           return '<li><span>' + esc(sf.name) + '</span><a href="' + esc(x.p.u) + '">' + esc(clean(x.p.t)) + (x.p.vs.length > 1 ? ' – ' + esc(v.t) : '') + '</a></li>';
-        }).join('') : '<li class="lc-fr__empty">Noch keine Fliese gewählt.</li>';
+        }).join('') + objRows : '<li class="lc-fr__empty">Noch keine Fliese gewählt.</li>';
         this.paint();
       }
       renderOptics() {
@@ -570,7 +670,7 @@
   }
 </script>
 
-{% stylesheet %}
+<style>
   .lc-fr { background: #fafaf9; color: #111; }
   .lc-fr__head { margin: 0 max(16px, 3vw); padding-bottom: 20px; border-bottom: 1px solid #111; }
   .lc-fr__head h2 { margin: 0; font-size: clamp(28px, 4vw, 44px); font-weight: 600; letter-spacing: -.01em; line-height: 1.05; }
@@ -593,6 +693,16 @@
   .lc-fr__tile { position: absolute; left: 0; top: 0; transform-origin: 0 0; background-repeat: repeat; backface-visibility: hidden; }
   .lc-fr__shade { mix-blend-mode: multiply; filter: grayscale(1) blur(10px) brightness(1.35) contrast(1.15); }
   .lc-fr__occ img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .lc-fr__objs { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .lc-fr__obj-on { position: absolute; left: 0; top: 0; transform-origin: 0 0; backface-visibility: hidden; }
+  .lc-fr__objlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px 8px; }
+  .lc-fr__obj { display: grid; gap: 5px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 10px; line-height: 1.25; color: #111; text-transform: uppercase; letter-spacing: .04em; }
+  .lc-fr__obj-img { display: grid; place-items: center; aspect-ratio: 1; background: #efedea; outline: 2px solid transparent; outline-offset: 2px; }
+  .lc-fr__obj-img i { display: block; }
+  .lc-fr__obj-orig { font-size: 10px; color: #8a8a8a; }
+  .lc-fr__obj.is-on .lc-fr__obj-img { outline-color: #111; }
+  .lc-fr__note { margin: 0; font-size: 12px; line-height: 1.45; color: #555; }
+  .lc-fr__note[hidden], .lc-fr__group[hidden] { display: none; }
   .lc-fr__hit { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
   .lc-fr__hit polygon { fill: transparent; stroke: transparent; vector-effect: non-scaling-stroke; stroke-width: 2; transition: fill .2s; }
   .lc-fr__hit polygon:hover { fill: rgba(255,255,255,.12); stroke: rgba(255,255,255,.7); }
@@ -640,7 +750,7 @@
   .lc-fr__sum a { color: #111; }
   .lc-fr__sum .lc-fr__empty { display: block; color: #8a8a8a; border: 0; }
   .lc-fr button:focus-visible, .lc-fr select:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
-{% endstylesheet %}
+</style>
 
 {% schema %}
 {
