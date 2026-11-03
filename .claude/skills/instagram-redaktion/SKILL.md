@@ -105,6 +105,8 @@ Vom Nutzer genannt am 03.11.2026. Instagram selbst ist von hier nicht abrufbar (
 | Fliesenleger (für Reels) | @dmitry__katkov (Nutzer schrieb „dimitry__katkov“), @ardi_qeramike |
 | Hersteller (nicht geprüft) | @argentaceramica, @pamesaceramica, @mirage_it, @lafaenzaceramica |
 
+**Bild-Vorlagen (seit 03.11.2026):** Instagram ist nicht abrufbar; der Umweg über lookaside.instagram.com wurde von der Sicherheitsprüfung blockiert – nicht erneut versuchen. Stattdessen Bilder von den Websites der Konten/Hersteller (z. B. albaqeramika.net zeigt eigene Instagram-Posts als imgi_..._n.jpg) per Firecrawl/WebFetch finden und mit `mcp__Higgsfield__media_import_url` importieren. Die media_ids stehen im Task-Gedächtnis /areas/unik-fliesen-vorlagen.md; Start: 5 Alba-Bilder (9e721b00…, 79728063…, ea4d7124…, 9e76747b…, dc907285…). Nutzung nur für Bildaufbau/Licht/Stimmung, nie Möbel/Personen/Texte/Logos kopieren.
+
 Regeln: Ideen und Machart übernehmen, nie Texte/Bilder/Layouts kopieren; keine politischen Anspielungen; Likes im Verhältnis zu Followern bewerten. Neue Konten: per Suche prüfen, dann den Task-Prompt per `update_trigger` ändern (nicht neu anlegen).
 
 ## Freigaben (vom Nutzer erteilt)
