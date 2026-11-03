@@ -92,7 +92,9 @@ Ablauf über die vorhandenen Skills: `reel-material-check` → `reel-vorher-nach
 
 ## Freigaben (vom Nutzer erteilt)
 
-- Tages-Dreierset: jeden Tag einzeln mit „posten“ freigeben (03.11.2026). Nie selbst einplanen.
+- **Grundregel (03.11.2026, ausdrücklich vom Nutzer): Niemals selbst posten.** Jeder Post, jede Story, jeder Kommentar und jede DM erst nach ausdrücklicher Freigabe des Nutzers für genau diesen Inhalt („posten“, „ok“, „freigegeben“). Kein Einplanen auf Vorrat, kein „läuft automatisch, wenn du nicht widersprichst“.
+- Eine Freigabe gilt nur für den gezeigten Inhalt. Wird ein Bild neu erzeugt oder der Text geändert, braucht es eine neue Freigabe.
+- KI-Bilder sind oft fehlerhaft (Beispiel 03.11.2026: Bild 1 des Testlaufs war defekt). Vor jeder Freigabe den Nutzer ausdrücklich bitten, die Bilder selbst anzusehen.
 
 ## Grenzen (immer ehrlich sagen)
 
