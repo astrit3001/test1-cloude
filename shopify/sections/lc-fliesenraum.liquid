@@ -265,7 +265,7 @@
           clearTimeout(this.st);
           this.st = setTimeout(() => {
             this.q = e.target.value.trim().toLowerCase(); this.show = 60;
-            if (this.q) { const all = this.sources[this.sources.length - 1]; if (all) this.loadOptic(all); }
+            if (this.q) this.sources.forEach((x) => this.loadOptic(x));
             this.renderTiles(); this.pump();
           }, 250);
         });
@@ -328,12 +328,17 @@
         this.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       cur() { return (this.choice[this.ri] = this.choice[this.ri] || {}); }
+      // Erstes Bild der Variante, das eine reine Fliesenoberfläche zeigt (Ergebnis je Bild im Browser gespeichert)
       async ok(v) {
-        if (!(v.img in this.cache)) {
-          this.cache[v.img] = await tileCheck(v.img, v.z);
-          try { localStorage.setItem(CACHE, JSON.stringify(this.cache)); } catch (e) {}
+        if (v.img) return true;
+        for (const u of v.cands) {
+          if (!(u in this.cache)) {
+            this.cache[u] = await tileCheck(u, v.z);
+            try { localStorage.setItem(CACHE, JSON.stringify(this.cache)); } catch (e) {}
+          }
+          if (this.cache[u]) { v.img = u; return true; }
         }
-        return this.cache[v.img];
+        return false;
       }
       // Alle Produkte einer Optik aus dem Shop laden (Storefront-JSON, 250 je Seite); Bilder über die Shop-Domain,
       // damit die Bildprüfung die Pixel lesen darf. Produkte aus früheren Optiken werden nicht doppelt gezeigt.
@@ -350,14 +355,18 @@
           const ps = (data && data.products) || [];
           ps.forEach((p) => {
             if (this.byId[p.id]) { this.byId[p.id].cats.add(src.l); return; }
-            const imgs = (p.images || []).filter((im) => !/anwendung/i.test(im.src));
+            const all = p.images || [], imgs = all.filter((im) => !/anwendung/i.test(im.src));
+            // Bildkandidaten je Variante: eigenes Variantenbild, dann Bilder mit „farbe/textur“, dann alle übrigen Produktbilder
+            const pref = imgs.filter((im) => /farbe|textur/i.test(im.src)).concat(imgs.filter((im) => !/farbe|textur/i.test(im.src)));
             const vs = (p.variants || []).map((v) => {
               const own = (v.featured_image && v.featured_image.src) || (imgs.find((im) => (im.variant_ids || []).indexOf(v.id) > -1) || {}).src;
-              const img = own && !/anwendung/i.test(own) ? own : (imgs.find((im) => /farbe|textur/i.test(im.src)) || {}).src;
+              const cands = [...new Set([own && !/anwendung/i.test(own) ? own : null, ...pref.map((im) => im.src)].filter(Boolean))].slice(0, 8).map(w);
               const z = size(v.title) || size(p.title) || [60, 60];
-              return { id: v.id, t: v.title, img: w(img), z, ok: v.available };
-            }).filter((v) => v.img && Math.min(...v.z) >= this.minS && Math.max(...v.z) >= this.minL);
-            if (vs.length) { const t = { id: p.id, cats: new Set([src.l]), t: p.title, v: p.vendor || '', u: '/products/' + p.handle, vs }; this.byId[p.id] = t; list.push(t); }
+              return { id: v.id, t: v.title, img: null, cands, z, ok: v.available };
+            }).filter((v) => Math.min(...v.z) >= this.minS && Math.max(...v.z) >= this.minL);
+            // Auch Fliesen ohne brauchbares Bild kommen in die Liste (als „ohne Vorschau“)
+            const pic = all[0] && w(all[0].src);
+            if (vs.length) { const t = { id: p.id, cats: new Set([src.l]), t: p.title, v: p.vendor || '', u: '/products/' + p.handle, vs, pic }; this.byId[p.id] = t; list.push(t); }
           });
           if (ps.length < 250) break;
         }
@@ -393,7 +402,7 @@
       }
       // Alle Varianten eines gewählten Produkts prüfen, nur echte Oberflächen in der Formatauswahl
       async goodVariants(p) {
-        if (!p.vsOk) { const r = await Promise.all(p.vs.map((v) => this.ok(v))); p.vsOk = p.vs.filter((v, i) => r[i]); }
+        if (!p.vsOk) { const r = []; for (const v of p.vs) r.push(await this.ok(v)); p.vsOk = p.vs.filter((v, i) => r[i]); }
         return p.vsOk;
       }
       // Flächen eines Raums aus der Vermessung: Rückwand, Seitenwände und Boden über Fluchtpunkt und Tiefe
@@ -504,14 +513,21 @@
         const c = this.cur()[this.active];
         this.$('[data-optics]').querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', !this.q && b.dataset.v === this.optic));
         const vis = this.visible(), good = vis.filter((t) => t.good), list = good.slice(0, this.show);
-        const src = this.q ? this.sources[this.sources.length - 1] : this.sources.find((x) => x.l === this.optic);
-        const loading = src && this.loaded[src.h] !== true;
+        const srcs = this.q ? this.sources : this.sources.filter((x) => x.l === this.optic);
+        const loading = srcs.some((x) => this.loaded[x.h] !== true);
         const busy = loading || (good.length < this.show && vis.some((t) => !t.done));
-        this.$('[data-more]').hidden = busy || !(good.length > this.show || vis.some((t) => !t.done));
+        const open = vis.some((t) => !t.done);
+        this.$('[data-more]').hidden = busy || !(good.length > this.show || open);
+        // Fliesen ohne reines Fliesenbild im Shop: am Ende, ausgegraut, mit Link zum Produkt
+        const none = busy || open || good.length > this.show ? [] : vis.filter((t) => t.done && !t.good);
         this.$('[data-tiles]').innerHTML = list.map((t) =>
           '<button type="button" class="lc-fr__tile-btn' + (c && c.p.id === t.id ? ' is-on' : '') + '" data-id="' + t.id + '" title="' + esc(clean(t.t)) + '">' +
           '<img src="' + esc(thumb(t.good.img)) + '" alt="" loading="lazy" width="160" height="200"><span>' + esc(clean(t.t)) + '</span></button>').join('') +
-          (busy ? '<p class="lc-fr__none">Fliesen werden geladen …</p>' : list.length ? '' : '<p class="lc-fr__none">' + (this.q ? 'Keine Fliese zu „' + esc(this.q) + '“ gefunden.' : 'Keine passenden Fliesen in dieser Auswahl.') + '</p>');
+          (none.length ? '<p class="lc-fr__none">Ohne Vorschau – für diese Fliesen gibt es noch kein reines Fliesenbild:</p>' + none.map((t) =>
+            '<a class="lc-fr__tile-btn is-off" href="' + esc(t.u) + '" target="_blank" rel="noopener" title="' + esc(clean(t.t)) + ' – Produkt ansehen">' +
+            (t.pic ? '<img src="' + esc(thumb(t.pic)) + '" alt="" loading="lazy" width="160" height="200">' : '<img alt="" width="160" height="200">') +
+            '<span>' + esc(clean(t.t)) + '</span><small>ohne Vorschau</small></a>').join('') : '') +
+          (busy ? '<p class="lc-fr__none">Fliesen werden geladen …</p>' : list.length || none.length ? '' : '<p class="lc-fr__none">' + (this.q ? 'Keine Fliese zu „' + esc(this.q) + '“ gefunden.' : 'Keine passenden Fliesen in dieser Auswahl.') + '</p>');
       }
     });
   }
@@ -566,6 +582,9 @@
   .lc-fr__tile-btn { display: grid; gap: 5px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 10px; line-height: 1.25; color: #111; }
   .lc-fr__tile-btn img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: #e9e7e3; outline: 2px solid transparent; outline-offset: 2px; }
   .lc-fr__tile-btn.is-on img { outline-color: #111; }
+  .lc-fr__tile-btn.is-off { text-decoration: none; opacity: .55; }
+  .lc-fr__tile-btn.is-off img { filter: grayscale(1); }
+  .lc-fr__tile-btn small { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #8a8a8a; }
   .lc-fr__tile-btn span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-transform: uppercase; letter-spacing: .04em; }
   .lc-fr__row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
   .lc-fr__field { display: grid; gap: 4px; font-size: 11px; color: #555; flex: 1 1 140px; }
@@ -589,7 +608,7 @@
     { "type": "text", "id": "title", "label": "Überschrift", "default": "Fliesen im Bad ausprobieren" },
     { "type": "textarea", "id": "intro", "label": "Einleitung", "default": "Bad wählen, Boden oder eine Wand im Bild anklicken und eine Fliese aus unserem Sortiment einsetzen. Jede Fläche einzeln." },
     { "type": "header", "content": "Fliesen zur Auswahl" },
-    { "type": "textarea", "id": "sources", "label": "Optiken: je Zeile Kollektion-Handle|Name", "default": "fliesen-marmoroptik|Marmoroptik\nfliesen-steinoptik|Steinoptik\nfliesen-betonoptik|Betonoptik\nfliesen-holzoptik|Holzoptik\nfliesen-grossformat|Großformat\nmosaike|Mosaik\nfliesen|Alle Fliesen", "info": "Reihenfolge = Reiter. Die letzte Zeile sollte die Kollektion mit allen Fliesen sein – die Suche durchsucht sie." },
+    { "type": "textarea", "id": "sources", "label": "Optiken: je Zeile Kollektion-Handle|Name", "default": "fliesen-marmoroptik|Marmoroptik\nfliesen-steinoptik|Steinoptik\nfliesen-betonoptik|Betonoptik\nfliesen-holzoptik|Holzoptik\nfliesen-grossformat|Großformat\nmosaike|Mosaik\nterrassenplatten-2-cm-20-mm-outdoor-feinsteinzeug|Outdoor\nfliesen|Alle Fliesen", "info": "Reihenfolge = Reiter. Die Suche durchsucht alle Zeilen; die letzte Zeile sollte die Kollektion mit allen Fliesen sein." },
     { "type": "range", "id": "min_short", "label": "Mindestformat: kurze Seite (cm), 0 = alle", "min": 0, "max": 160, "step": 10, "default": 0 },
     { "type": "range", "id": "min_long", "label": "Mindestformat: lange Seite (cm), 0 = alle", "min": 0, "max": 320, "step": 10, "default": 0 },
     { "type": "range", "id": "padding_top", "label": "Abstand oben", "min": 0, "max": 80, "step": 4, "default": 48 },
