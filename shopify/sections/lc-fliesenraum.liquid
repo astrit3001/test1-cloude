@@ -307,6 +307,7 @@
           const slot = this.slots()[0]; if (!slot) return;
           const oc = this.curObj();
           if (b.dataset.m === '') delete oc[0]; else oc[0] = { m: +b.dataset.m, s: 0 };
+          this.update(); // Spiegel sofort zeigen, Wand dahinter im Hintergrund vorbereiten
           this.ensureWall(slot).then(() => this.update());
         });
         this.$('[data-objsize]').addEventListener('change', (e) => { const c = this.curObj()[0]; if (c) { c.s = +e.target.value; this.update(); } });
@@ -549,6 +550,8 @@
         const note = this.$('[data-objnote]');
         note.hidden = true;
         if (!this.curObj()[0] || this.cur()[slot.surf]) return;
+        note.textContent = 'Wand hinter dem Spiegel wird vorbereitet …';
+        note.hidden = false;
         const r = this.rooms[this.ri], all = this.sources[this.sources.length - 1];
         if (all) await this.loadOptic(all);
         while (all && this.loaded[all.h] !== true) await new Promise((res) => setTimeout(res, 150));
